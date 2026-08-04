@@ -1,0 +1,420 @@
+/*
+ * This file is part of LiquidBounce (https://github.com/CCBlueX/LiquidBounce)
+ *
+ * Copyright (c) 2015 - 2026 CCBlueX
+ *
+ * LiquidBounce is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * LiquidBounce is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with LiquidBounce. If not, see <https://www.gnu.org/licenses/>.
+ */
+package net.ccbluex.liquidbounce.features.module.modules.combat.killaura.features
+
+import net.ccbluex.liquidbounce.config.types.group.ToggleableValueGroup
+import net.ccbluex.liquidbounce.config.types.list.Tagged
+import net.ccbluex.liquidbounce.event.events.BlinkPacketEvent
+import net.ccbluex.liquidbounce.event.events.GameTickEvent
+import net.ccbluex.liquidbounce.event.events.PacketEvent
+import net.ccbluex.liquidbounce.event.events.TransferOrigin
+import net.ccbluex.liquidbounce.event.events.WorldChangeEvent
+import net.ccbluex.liquidbounce.event.handler
+import net.ccbluex.liquidbounce.features.blink.BlinkManager
+import net.ccbluex.liquidbounce.features.module.modules.combat.ModuleSwordBlock
+import net.ccbluex.liquidbounce.features.module.modules.combat.killaura.ModuleKillAura
+import net.ccbluex.liquidbounce.features.module.modules.combat.killaura.ModuleKillAura.RaycastMode.TRACE_ALL
+import net.ccbluex.liquidbounce.features.module.modules.combat.killaura.ModuleKillAura.RaycastMode.TRACE_NONE
+import net.ccbluex.liquidbounce.features.module.modules.combat.killaura.ModuleKillAura.RaycastMode.TRACE_ONLYENEMY
+import net.ccbluex.liquidbounce.features.module.modules.combat.killaura.ModuleKillAura.range
+import net.ccbluex.liquidbounce.features.module.modules.combat.killaura.ModuleKillAura.raycast
+import net.ccbluex.liquidbounce.features.module.modules.combat.killaura.ModuleKillAura.targetTracker
+import net.ccbluex.liquidbounce.features.module.modules.render.ModuleDebug.debugParameter
+import net.ccbluex.liquidbounce.utils.aiming.RotationManager
+import net.ccbluex.liquidbounce.utils.aiming.data.Rotation
+import net.ccbluex.liquidbounce.utils.client.isOlderThanOrEqual1_8
+import net.ccbluex.liquidbounce.utils.client.isBlocksAttacksExisting
+import net.ccbluex.liquidbounce.utils.network.releaseUsingItemInTickLoop
+import net.ccbluex.liquidbounce.utils.network.sendHeldItemChange
+import net.ccbluex.liquidbounce.utils.network.sendSwapItemWithOffhand
+import net.ccbluex.liquidbounce.utils.combat.shouldBeAttacked
+import net.ccbluex.liquidbounce.utils.entity.interactBlock
+import net.ccbluex.liquidbounce.utils.entity.interactBlockLikeVanilla
+import net.ccbluex.liquidbounce.utils.entity.interactEntity
+import net.ccbluex.liquidbounce.utils.entity.interactEntityLikeVanilla
+import net.ccbluex.liquidbounce.utils.entity.isBlockingServerside
+import net.ccbluex.liquidbounce.utils.entity.rotation
+import net.ccbluex.liquidbounce.utils.entity.squaredBoxedDistanceTo
+import net.ccbluex.liquidbounce.utils.entity.useItem
+import net.ccbluex.liquidbounce.utils.entity.useItemStrict
+import net.ccbluex.liquidbounce.utils.input.InputTracker.isPressedOnAny
+import net.ccbluex.liquidbounce.utils.item.isSword
+import net.ccbluex.liquidbounce.utils.math.sq
+import net.ccbluex.liquidbounce.utils.raytracing.findEntityInCrosshair
+import net.ccbluex.liquidbounce.utils.raytracing.isLookingAtEntity
+import net.ccbluex.liquidbounce.utils.raytracing.traceFromPlayer
+import net.minecraft.core.BlockPos
+import net.minecraft.core.Direction
+import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket
+import net.minecraft.network.protocol.game.ServerboundSetCarriedItemPacket
+import net.minecraft.network.protocol.game.ServerboundUseItemPacket
+import net.minecraft.world.InteractionHand
+import net.minecraft.world.InteractionResult
+import net.minecraft.world.item.ItemUseAnimation
+import net.minecraft.world.phys.HitResult
+
+object KillAuraAutoBlock : ToggleableValueGroup(ModuleKillAura, "AutoBlocking", false) {
+
+    private val blockMode by enumChoice("BlockMode", BlockMode.INTERACT)
+    private val simulateVanillaUse by boolean("SimulateVanillaUse", true)
+    private val unblockMode by enumChoice("UnblockMode", UnblockMode.STOP_USING_ITEM)
+
+    private val reblockTicksRange by intRange(
+        "Reblock", 0..0, 0..3, "ticks", aliases = listOf("TickOn")
+    ).onChanged { range ->
+        reblockTicks = range.random()
+    }
+    private val pauseOnUnblockTicksRange by intRange(
+        "PauseOnUnblock", 0..0, 0..3, "ticks", aliases = listOf("TickOff")
+    ).onChanged { range ->
+        pauseOnUnblockTicks = range.random()
+    }
+
+    var reblockTicks: Int = reblockTicksRange.random()
+    var pauseOnUnblockTicks: Int = pauseOnUnblockTicksRange.random()
+
+    val chance by float("Chance", 100f, 0f..100f, "%")
+    val blink by int("Blink", 0, 0..10, "ticks")
+
+    private val prioritizeBlocking by boolean("PrioritizeBlocking", true)
+    val onScanRange by boolean("OnScanRange", true)
+    private val onlyWhenInDanger by boolean("OnlyWhenInDanger", false)
+
+    private val assumeShield by boolean("AssumeShield", false)
+
+    private var blockingTicks = 0
+
+    var enforcedBlockingHand: InteractionHand? = null
+        set(value) {
+            debugParameter(this, "EnforcedBlockingHand", value)
+            debugParameter(this, if (value != null) {
+                "Block Age"
+            } else {
+                "Unblock Age"
+            }, player.tickCount)
+
+            field = value
+        }
+
+    var blockVisual = false
+        get() = field && running &&
+            (isOlderThanOrEqual1_8 || ModuleSwordBlock.running)
+
+    val shouldUnblockToHit
+        get() = unblockMode != UnblockMode.NONE
+
+    val blockImmediate
+        get() = reblockTicks == 0
+
+    var hasBlockedSinceAttack = false
+
+    var isInDanger = false
+
+    val isPrioritizingBlocking: Boolean
+        get() {
+            if (player.isUsingItem) {
+                hasBlockedSinceAttack = true
+            }
+
+            if (!running || !prioritizeBlocking || blockMode == BlockMode.FAKE || findBlockableHand() == null) {
+                return false
+            }
+
+            return !hasBlockedSinceAttack && (!onlyWhenInDanger || isInDanger)
+        }
+
+    override fun onDisabled() {
+        this.stopBlocking()
+        this.hasBlockedSinceAttack = false
+        this.isInDanger = false
+        super.onDisabled()
+    }
+
+    fun makeSeemBlock() {
+        if (!running) {
+            return
+        }
+
+        blockVisual = true
+    }
+
+    fun startBlocking(): Boolean {
+        // 使用 Math.random() 避免导入 Random
+        if (!running || Math.random() * 100 > chance) {
+            return false
+        }
+
+        if (onlyWhenInDanger && !isInDanger) {
+            this.stopBlocking()
+            return false
+        }
+
+        if (player.isUsingItem) {
+            hasBlockedSinceAttack = true
+            return false
+        }
+
+        val blockHand = findBlockableHand() ?: return false
+        val rotation = RotationManager.currentRotation ?: player.rotation
+        debugParameter("BlockHand") { blockHand }
+
+        // ---- Grim 模式：通过反射构造 ServerboundUseItemPacket ----
+        if (blockMode == BlockMode.GRIM) {
+            try {
+                // 尝试获取接受 InteractionHand 的构造函数
+                val packetClass = ServerboundUseItemPacket::class.java
+                val constructor = packetClass.getDeclaredConstructor(InteractionHand::class.java)
+                constructor.isAccessible = true
+                // 发送主手和副手使用包
+                val packetMain = constructor.newInstance(InteractionHand.MAIN_HAND)
+                val packetOff = constructor.newInstance(InteractionHand.OFF_HAND)
+                network.send(packetMain)
+                network.send(packetOff)
+            } catch (_: Exception) {
+                // 反射失败则回退到 useItem 函数
+                useItem(InteractionHand.MAIN_HAND, rotation.yaw, rotation.pitch)
+                useItem(InteractionHand.OFF_HAND, rotation.yaw, rotation.pitch)
+            }
+            reblockTicks = reblockTicksRange.random()
+            blockVisual = true
+            enforcedBlockingHand = InteractionHand.MAIN_HAND
+            hasBlockedSinceAttack = true
+            return true
+        }
+
+        when (blockMode) {
+            BlockMode.INTERACT -> if (interactWithFacing(rotation, blockHand)) {
+                reblockTicks = reblockTicksRange.random()
+                blockVisual = true
+                enforcedBlockingHand = blockHand
+                hasBlockedSinceAttack = true
+                return true
+            }
+            BlockMode.FAKE -> {
+                blockVisual = true
+                return false
+            }
+            else -> { }
+        }
+
+        if (genericUseItem(rotation, blockHand)) {
+            reblockTicks = reblockTicksRange.random()
+            enforcedBlockingHand = blockHand
+            hasBlockedSinceAttack = true
+        }
+
+        blockVisual = true
+        return true
+    }
+
+    private var flushTicks = 0
+
+    @Suppress("unused")
+    private val gameTickHandler = handler<GameTickEvent> {
+        flushTicks++
+
+        if (enforcedBlockingHand != null) {
+            blockingTicks++
+        }
+
+        isInDanger = targetTracker.targets().any { target ->
+            player.squaredBoxedDistanceTo(target) <= KillAuraRange.interactionRange.sq() && isLookingAtEntity(
+                fromEntity = target,
+                toEntity = player,
+                rotation = target.rotation,
+                range = range.interactionRange.toDouble(),
+                throughWallsRange = range.interactionThroughWallsRange.toDouble()
+            ) != null
+        }
+        debugParameter("IsInDanger") { isInDanger }
+    }
+
+    @Suppress("unused")
+    private val worldChangeHandler = handler<WorldChangeEvent> {
+        enforcedBlockingHand = null
+    }
+
+    @Suppress("unused")
+    private val blinkHandler = handler<BlinkPacketEvent> { event ->
+        if (event.origin != TransferOrigin.OUTGOING) {
+            return@handler
+        }
+
+        fun flush(reason: String) {
+            debugParameter(this, "Flush", flushTicks)
+            debugParameter(this, "Flush Reason", reason)
+            flushTicks = 0
+        }
+
+        when {
+            !blockVisual -> flush("Not blocking")
+            enforcedBlockingHand != null || event.packet is ServerboundUseItemPacket -> flush("Start blocking")
+            flushTicks >= blink -> flush("Timed out")
+            else -> event.action = BlinkManager.Action.QUEUE
+        }
+    }
+
+    fun stopBlocking(pauses: Boolean = false): Boolean {
+        if (!pauses) {
+            blockVisual = false
+
+            if (mc.options.keyUse.isPressedOnAny) {
+                return false
+            }
+        }
+
+        if (!player.isBlockingServerside) {
+            return false
+        }
+
+        pauseOnUnblockTicks = pauseOnUnblockTicksRange.random()
+
+        // ---- Grim 模式专用释放 ----
+        if (blockMode == BlockMode.GRIM) {
+            // 发送释放物品动作
+            network.send(
+                ServerboundPlayerActionPacket(
+                    ServerboundPlayerActionPacket.Action.RELEASE_USE_ITEM,
+                    BlockPos.ZERO,
+                    Direction.DOWN
+                )
+            )
+            enforcedBlockingHand = null
+            return true
+        }
+
+        return when (unblockMode) {
+            UnblockMode.STOP_USING_ITEM -> {
+                interaction.releaseUsingItemInTickLoop()
+                enforcedBlockingHand = null
+                true
+            }
+
+            UnblockMode.CHANGE_SLOT -> {
+                val currentSlot = player.inventory.selectedSlot
+                val nextSlot = (currentSlot + 1) % 9
+                network.sendHeldItemChange(nextSlot)
+                network.sendHeldItemChange(currentSlot)
+                if (enforcedBlockingHand == InteractionHand.MAIN_HAND) {
+                    enforcedBlockingHand = null
+                    true
+                } else {
+                    false
+                }
+            }
+
+            UnblockMode.SWAP_HAND -> {
+                network.sendSwapItemWithOffhand()
+                network.sendSwapItemWithOffhand()
+                enforcedBlockingHand = null
+                true
+            }
+
+            UnblockMode.NONE -> if (!pauses) {
+                interaction.releaseUsingItemInTickLoop()
+                enforcedBlockingHand = null
+                true
+            } else {
+                false
+            }
+        }
+    }
+
+    @Suppress("unused")
+    private val changeSlot = handler<PacketEvent> { event ->
+        val packet = event.packet
+
+        if ((packet is ServerboundSetCarriedItemPacket &&
+                enforcedBlockingHand == InteractionHand.MAIN_HAND) ||
+            (packet is ServerboundPlayerActionPacket &&
+                packet.action === ServerboundPlayerActionPacket.Action.SWAP_ITEM_WITH_OFFHAND)
+        ) {
+            blockVisual = false
+            enforcedBlockingHand = null
+        }
+    }
+
+    private fun interactWithFacing(rotation: Rotation, blockHand: InteractionHand): Boolean {
+        val entityHitResult =
+            findEntityInCrosshair(range.interactionRange.toDouble(), rotation, predicate = {
+                when (raycast) {
+                    TRACE_NONE -> false
+                    TRACE_ONLYENEMY -> it.shouldBeAttacked()
+                    TRACE_ALL -> true
+                }
+            })
+        val entity = entityHitResult?.entity
+
+        if (entity != null) {
+            return if (simulateVanillaUse) {
+                val result = interactEntityLikeVanilla(entity, entityHitResult, rotation = rotation) ?: return false
+                result.isUseItemSuccess && result.hand == blockHand
+            } else {
+                interactEntity(entity, entityHitResult, hand = blockHand) is InteractionResult.Success
+            }
+        }
+
+        val hitResult = traceFromPlayer(rotation)
+
+        return if (hitResult.type != HitResult.Type.BLOCK) {
+            genericUseItem(rotation, blockHand)
+        } else {
+            if (simulateVanillaUse) {
+                val result = interactBlockLikeVanilla(hitResult, rotation = rotation) ?: return false
+                result.isUseItemSuccess && result.hand == blockHand
+            } else {
+                interactBlock(hitResult, hand = blockHand) is InteractionResult.Success
+            }
+        }
+    }
+
+    private fun genericUseItem(rotation: Rotation, blockHand: InteractionHand): Boolean {
+        return if (simulateVanillaUse) {
+            val useItemResult = useItemStrict(rotation.yRot, rotation.xRot)
+            useItemResult != null && useItemResult.hand == blockHand
+        } else {
+            useItem(blockHand, rotation.yRot, rotation.xRot) is InteractionResult.Success
+        }
+    }
+
+    private fun findBlockableHand() = InteractionHand.entries.find {
+        val itemStack = player.getItemInHand(it)
+        itemStack.useAnimation == ItemUseAnimation.BLOCK
+            && itemStack.isItemEnabled(world.enabledFeatures())
+            && !player.cooldowns.isOnCooldown(itemStack)
+    } ?: if (assumeShield && !isBlocksAttacksExisting && player.mainHandItem.isSword) {
+        InteractionHand.MAIN_HAND
+    } else {
+        null
+    }
+
+    enum class BlockMode(override val tag: String) : Tagged {
+        BASIC("Basic"),
+        INTERACT("Interact"),
+        FAKE("Fake"),
+        GRIM("Grim")    // 新增 Grim 模式
+    }
+
+    enum class UnblockMode(override val tag: String) : Tagged {
+        STOP_USING_ITEM("StopUsingItem"),
+        CHANGE_SLOT("ChangeSlot"),
+        SWAP_HAND("SwapHand"),
+        NONE("None"),
+    }
+}
