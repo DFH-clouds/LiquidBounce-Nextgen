@@ -30,6 +30,7 @@ import net.ccbluex.liquidbounce.features.module.ModuleCategories
 import net.ccbluex.liquidbounce.features.module.modules.combat.velocity.mode.VelocityAAC442
 import net.ccbluex.liquidbounce.features.module.modules.combat.velocity.mode.VelocityBlocksMC
 import net.ccbluex.liquidbounce.features.module.modules.combat.velocity.mode.VelocityDexland
+import net.ccbluex.liquidbounce.features.module.modules.combat.velocity.mode.VelocityGrim726
 import net.ccbluex.liquidbounce.features.module.modules.combat.velocity.mode.VelocityGrimFull
 import net.ccbluex.liquidbounce.features.module.modules.combat.velocity.mode.VelocityGrimNoxz
 import net.ccbluex.liquidbounce.features.module.modules.combat.velocity.mode.VelocityHylex
@@ -73,6 +74,7 @@ object ModuleVelocity : ClientModule("Velocity", ModuleCategories.COMBAT, aliase
             // Anti cheat modes
             VelocityGrimNoxz,
             VelocityGrimFull,
+            VelocityGrim726,
             VelocityAAC442,
             VelocityIntave,
         )

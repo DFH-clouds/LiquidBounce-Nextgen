@@ -12,26 +12,16 @@
 
     const cSettings = settings as HudArrayListSettings;
 
+    // 颜色配置
+    const blueColor   = { r: 88,  g: 204, b: 250 };  // 顶部蓝
+    const pinkColor   = { r: 245, g: 150, b: 200 };  // 中间粉
+    const purpleColor = { r: 123, g: 44,  b: 191 };  // 底部紫
 
-    // 顶浅蓝
-    const startColor = cSettings.startColor ?? { r: 88, g: 204, b: 250 };
-    // 终深紫
-    const endColor = cSettings.endColor ?? { r: 123, g: 44, b: 191 };
+    const tagColor = cSettings.tagColor ?? 'rgba(255,255,255,0.85)';
 
-    const tagColor = cSettings.tagColor ?? '#ffffff';
-
-
-    const enableGradient = cSettings.enableGradient ?? false;
-
-    //字体配置 没用
-    const fontMap: Record<string, string> = {
-        'Client': 'Inter, system-ui, -apple-system, sans-serif',
-        'Minecraft': '"Minecraft", "Minecraft Default", monospace',
-        'Harmany': '"Harmany Sans", "Harmany", sans-serif'
-    };
-    const selectedFont = cSettings.font ?? 'Client';
+    // 固定字体，只保留字号设置
     const fontSize = cSettings.fontSize ?? 14;
-    const fontFamily = fontMap[selectedFont] ?? fontMap['Client'];
+    const fontFamily = 'Inter, system-ui, -apple-system, sans-serif';
 
     let enabledModules: Module[] = [];
 
@@ -78,28 +68,35 @@
 </script>
 
 <div class="arraylist">
-
     {#each enabledModules as { name, tag }, index (name)}
-
         {@const totalItems = enabledModules.length}
         {@const progress = totalItems > 1 ? index / (totalItems - 1) : 0}
-        {@const currentR = Math.round(startColor.r + (endColor.r - startColor.r) * progress)}
-        {@const currentG = Math.round(startColor.g + (endColor.g - startColor.g) * progress)}
-        {@const currentB = Math.round(startColor.b + (endColor.b - startColor.b) * progress)}
+
+        <!-- 三色分段渐变 -->
+        {@const half = 0.5}
+        {@const r = progress <= half
+            ? Math.round(blueColor.r + (pinkColor.r - blueColor.r) * (progress / half))
+            : Math.round(pinkColor.r + (purpleColor.r - pinkColor.r) * ((progress - half) / half))}
+        {@const g = progress <= half
+            ? Math.round(blueColor.g + (pinkColor.g - blueColor.g) * (progress / half))
+            : Math.round(pinkColor.g + (purpleColor.g - pinkColor.g) * ((progress - half) / half))}
+        {@const b = progress <= half
+            ? Math.round(blueColor.b + (pinkColor.b - blueColor.b) * (progress / half))
+            : Math.round(pinkColor.b + (purpleColor.b - pinkColor.b) * ((progress - half) / half))}
 
         <div
-                class="module"
-                style="
-                    font-size: {fontSize}px;
-                    font-family: {fontFamily};
-                    {cSettings.itemAlignment === 'Left' ? 'margin-right: auto;' : 'margin-left: auto;'}
-                "
-                animate:flip={{ duration: 200 }}
-                transition:fly={{ x: 50, duration: 200 }}
+            class="module"
+            style="
+                font-size: {fontSize}px;
+                font-family: {fontFamily};
+                {cSettings.itemAlignment === 'Left' ? 'margin-right: auto;' : 'margin-left: auto;'}
+            "
+            animate:flip={{ duration: 200 }}
+            transition:fly={{ x: 50, duration: 200 }}
         >
             <span
                 class="name"
-                style="color: rgb({currentR}, {currentG}, {currentB});"
+                style="color: rgb({r}, {g}, {b});"
             >
                 {$spaceSeperatedNames ? convertToSpacedString(name) : name}
             </span>
@@ -119,24 +116,24 @@
   }
 
   .module {
-    background: rgba(255, 255, 255, 0.25);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
+    background: rgba(255, 255, 255, 0.18);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
     padding: 2px 4px;
     border-radius: 8px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
     width: max-content;
     font-weight: 500;
     text-shadow: none;
   }
 
   .name {
-    font-weight: 700;   /* 加粗 */
+    font-weight: 700;
   }
 
   .tag {
     margin-left: 4px;
-    font-weight: 400;   /* 常规 */
+    font-weight: 400;
     text-shadow: 0 0 8px rgba(0, 0, 0, 0.4);
   }
 </style>

@@ -71,6 +71,7 @@ import net.ccbluex.liquidbounce.features.module.modules.exploit.ModuleMultiActio
 import net.ccbluex.liquidbounce.features.module.modules.exploit.ModuleNameCollector
 import net.ccbluex.liquidbounce.features.module.modules.exploit.ModuleNoPitchLimit
 import net.ccbluex.liquidbounce.features.module.modules.exploit.ModulePingSpoof
+import net.ccbluex.liquidbounce.features.module.modules.combat.ModuleCriticalsGrim
 import net.ccbluex.liquidbounce.features.module.modules.exploit.ModulePlugins
 import net.ccbluex.liquidbounce.features.module.modules.exploit.ModulePortalMenu
 import net.ccbluex.liquidbounce.features.module.modules.exploit.ModuleResetVL
@@ -468,6 +469,7 @@ object ModuleManager : EventListener, Collection<ClientModule> by modules {
             ModuleAutoWeapon,
             ModuleFakeLag,
             ModuleCriticals,
+            ModuleCriticalsGrim,
             ModuleHitbox,
             ModuleKillAura,
             ModuleTpAura,

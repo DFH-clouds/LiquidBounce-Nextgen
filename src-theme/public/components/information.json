@@ -1,0 +1,45 @@
+{
+  "name": "Information",
+  "enabled": true,
+  "singleton": true,
+  "alignment": {
+    "horizontalAlignment": "CenterTranslated",
+    "horizontalOffset": 0,
+    "verticalAlignment": "Top",
+    "verticalOffset": 15
+  },
+  "values": [
+    {
+      "type": "MULTI_CHOOSE",
+      "name": "Show",
+      "value": ["Username", "FPS", "Coords"],
+      "choices": ["Username", "FPS", "Coords"],
+      "canBeNone": false
+    },
+    {
+      "type": "BOOLEAN",
+      "name": "player list",
+      "value": true
+    },
+    {
+      "type": "BOOLEAN",
+      "name": "Notifications Settings",
+      "value": true
+    },
+    {
+      "type": "BOOLEAN",
+      "name": "scaffold",
+      "value": true
+    },
+    {
+      "type": "INT",
+      "name": "Width",
+      "value": 50,
+      "range": {
+        "min": 0,
+        "max": 200
+      },
+      "suffix": "%"
+    }
+  ]
+}

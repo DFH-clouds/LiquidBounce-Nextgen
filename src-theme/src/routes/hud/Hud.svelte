@@ -20,11 +20,37 @@
     import KeyBinds from "./elements/KeyBinds.svelte";
     import GenericPlayerInventory from "./elements/inventory/GenericPlayerInventory.svelte";
     import {os} from "../clickgui/clickgui_store";
+    import Information from "./elements/Information.svelte"
     import InventoryStatistics from "./elements/inventory/InventoryStatistics.svelte";
 
     let zoom = 100;
     let metadata: Metadata;
     let components: HudComponent[] = [];
+    const INFORMATION_COMPONENT_NAMES = new Set(["Information"]);
+
+    function dedupeCompatibleComponents(comps: HudComponent[]): HudComponent[] {
+        const result: HudComponent[] = [];
+        let informationIndex = -1;
+
+        for (const component of comps) {
+            if (!INFORMATION_COMPONENT_NAMES.has(component.name)) {
+                result.push(component);
+                continue;
+            }
+
+            if (informationIndex === -1) {
+                informationIndex = result.length;
+                result.push(component);
+                continue;
+            }
+
+            if (component.name === "Information") {
+                result[informationIndex] = component;
+            }
+        }
+
+        return result;
+    }
 
     onMount(async () => {
         $os = (await getClientInfo()).os;
@@ -99,6 +125,8 @@
                     <img alt="" src="{c.settings.uRL}" style="scale: {c.settings.scale};">
                 {:else if c.name === "KeyBinds"}
                     <KeyBinds/>
+                {:else if c.name === "Information"}
+                   <Information settings={c.settings} />
                 {/if}
             </DraggableComponent>
         {/if}

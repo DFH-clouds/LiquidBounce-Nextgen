@@ -747,6 +747,24 @@ export async function loginClientUser() {
         }
     });
 }
+export function getRememberedConnectedServerAddress() {
+    try {
+        localStorage.removeItem(LAST_CONNECTED_SERVER_ADDRESS_KEY);
+        localStorage.removeItem(LAST_CONNECTED_SERVER_ADDRESS_TIME_KEY);
+
+        const address = sessionStorage.getItem(LAST_CONNECTED_SERVER_ADDRESS_KEY) ?? "";
+        const timestamp = Number(sessionStorage.getItem(LAST_CONNECTED_SERVER_ADDRESS_TIME_KEY));
+        if (!address || !Number.isFinite(timestamp) || Date.now() - timestamp > LAST_CONNECTED_SERVER_ADDRESS_MAX_AGE_MS) {
+            sessionStorage.removeItem(LAST_CONNECTED_SERVER_ADDRESS_KEY);
+            sessionStorage.removeItem(LAST_CONNECTED_SERVER_ADDRESS_TIME_KEY);
+            return "";
+        }
+
+        return address;
+    } catch {
+        return "";
+    }
+}
 
 export async function logoutClientUser() {
     await fetch(`${API_BASE}/client/user/logout`, {
