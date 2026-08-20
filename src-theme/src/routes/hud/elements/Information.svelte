@@ -1,4 +1,6 @@
 <script lang="ts">
+ // 原代码来自 https://github.com/snwmdd114514-lang/BeautifyBouncePlus/tree/main
+ // 本代码移除了音乐播放相关代码 并修复了在scaffold状态下 方块过多 block文本显示异常的bug
     import { cubicOut, quintOut } from "svelte/easing";
     import { fade, fly, slide } from "svelte/transition";
     import { onDestroy, onMount } from "svelte";
@@ -1360,14 +1362,14 @@
         flex-direction: column;
         align-items: stretch;
         gap: 0;
-        /* 白色毛玻璃，保持清爽感 */
-        background: rgba(255, 255, 255, 0.85) !important;
-        backdrop-filter: blur(10px) !important;
-        -webkit-backdrop-filter: blur(10px) !important;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08) !important;
+        /*半透明毛玻璃 */
+        background: rgba(255, 255, 255, 0.35) !important;
+        backdrop-filter: blur(12px) !important;
+        -webkit-backdrop-filter: blur(12px) !important;
+        /* 微微加深阴影 */
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12) !important;
         padding: 10px;
         border-radius: 14px;
-        /* 宽度由 JS 变量直接控制，彻底恢复成常态固定宽度 */
         width: min(var(--island-width), 92vw) !important;
         min-width: unset !important;
         max-width: min(560px, 92vw) !important;
