@@ -2,7 +2,7 @@
     import Status from "./Status.svelte";
     import {listen} from "../../../../integration/ws";
     import type {PlayerData, TextComponent as TTExtComponent} from "../../../../integration/types";
-    import {onMount} from "svelte";
+    import {onDestroy, onMount} from "svelte";
     import {getPlayerData} from "../../../../integration/rest";
     import {fade} from "svelte/transition";
     import TextComponent from "../../../menu/common/TextComponent.svelte";
@@ -20,6 +20,8 @@
     let overlayMessage: OverlayMessageEvent | null = null;
     let overlayMessageTimeout: number | null = null;
 
+    let lastMainHandItem = "";
+
     function updatePlayerData(s: PlayerData) {
         playerData = s;
         if (playerData.absorption <= 0) {
@@ -29,17 +31,30 @@
             maxAbsorption = playerData.absorption;
         }
         currentSlot = playerData.selectedSlot;
-        if (currentSlot !== lastSlot) {
-            lastSlot = currentSlot;
-            if (playerData.mainHandStack.identifier !== "minecraft:air") {
-                itemStackName = playerData.mainHandStack.displayName;
-                if (showItemStackNameTimeout !== null) {
-                    clearTimeout(showItemStackNameTimeout);
-                }
+        const currentItem = playerData.mainHandStack.identifier;
+
+        if (currentSlot !== lastSlot || currentItem !== lastMainHandItem) {
+            lastMainHandItem = currentItem;
+
+            if (showItemStackNameTimeout !== null) {
+                clearTimeout(showItemStackNameTimeout);
+                showItemStackNameTimeout = null;
+            }
+
+            const stack = playerData.mainHandStack;
+            if (stack.identifier !== "minecraft:air") {
+                itemStackName = stack.displayName;
                 showItemStackName = true;
                 showItemStackNameTimeout = setTimeout(() => {
                     showItemStackName = false;
                 }, 2000);
+            } else {
+                itemStackName = null;
+                showItemStackName = false;
+            }
+
+            if (currentSlot !== lastSlot) {
+                lastSlot = currentSlot;
             }
         }
     }
@@ -61,6 +76,15 @@
     onMount(async () => {
         updatePlayerData(await getPlayerData());
     });
+
+    onDestroy(() => {
+        if (showItemStackNameTimeout !== null) {
+            clearTimeout(showItemStackNameTimeout);
+        }
+        if (overlayMessageTimeout !== null) {
+            clearTimeout(overlayMessageTimeout);
+        }
+    });
 </script>
 
 {#if playerData && playerData.gameMode !== "spectator"}
@@ -73,7 +97,7 @@
         {/if}
         {#if showItemStackName && itemStackName !== null}
             <div class="item-name" out:fade={{duration: 300}}>
-                <TextComponent fontSize={14} textComponent={itemStackName}/>
+                <TextComponent fontSize={14} textComponent={itemStackName} allowPreformatting={true} />
             </div>
         {/if}
         <div class="status">
@@ -181,8 +205,9 @@
     column-gap: 20px;
   }
 
+  //半透明物品栏
   .hotbar-elements {
-    background-color: var(--hud-panel-background, rgba(255, 255, 255, 1));
+    background: rgba(255, 255, 255, 0.35);
     backdrop-filter: blur(var(--hud-panel-blur, 0px));
     -webkit-backdrop-filter: blur(var(--hud-panel-blur, 0px));
     box-shadow: 0 8px 20px rgba(25, 35, 55, var(--hud-panel-shadow-alpha, 0.12));
@@ -196,7 +221,6 @@
       width: 45px;
       position: absolute;
       border-radius: 12px;
-      /* transition: linear left 0.05s; TODO: Animation is possible but annoying */
     }
 
     .slots {
@@ -221,17 +245,19 @@
 
   .item-name {
     color: var(--hotbar-text-color);
-    text-shadow: 0 0 8px color-mix(in srgb, var(--hotbar-text-color) 40%, transparent);
-    font-size: 14px;
     margin: 0 auto 20px;
     font-weight: 500;
-    background-color: var(--hud-panel-background, rgba(255, 255, 255, 1));
+
+    background: rgba(255, 255, 255, 0.35);
     backdrop-filter: blur(var(--hud-panel-blur, 0px));
     -webkit-backdrop-filter: blur(var(--hud-panel-blur, 0px));
+
     box-shadow: 0 8px 20px rgba(25, 35, 55, var(--hud-panel-shadow-alpha, 0.12));
     padding: 6px 8px;
     border-radius: 10px;
     width: max-content;
+
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.55);
   }
 
   .overlay-message {
