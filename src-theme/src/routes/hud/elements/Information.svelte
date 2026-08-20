@@ -1,6 +1,3 @@
-//原代码来自https://github.com/snwmdd114514-lang/BeautifyBouncePlus/tree/main 本代码移除了音乐播放相关代码 并修复了在scaffold状态下 方块过多 block文本显示异常的bug
-
-
 <script lang="ts">
     import { cubicOut, quintOut } from "svelte/easing";
     import { fade, fly, slide } from "svelte/transition";
