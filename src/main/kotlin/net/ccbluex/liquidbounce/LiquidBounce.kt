@@ -115,7 +115,7 @@ object LiquidBounce : EventListener {
      */
     const val CLIENT_NAME = "LiquidBounce"
     const val CLIENT_AUTHOR = "CCBlueX"
-    val version1 = "2.0"
+    val version1 = "3.0"
 
     private object Client : Config("Client") {
         val version = text("Version", version1)

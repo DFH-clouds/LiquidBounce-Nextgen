@@ -1,6 +1,7 @@
 <script lang="ts">
  // 原代码来自 https://github.com/snwmdd114514-lang/BeautifyBouncePlus/tree/main
  // 本代码移除了音乐播放相关代码 并修复了在scaffold状态下 方块过多 block文本显示异常的bug
+ // 额外修改：移除坐标和服务器延迟显示，添加时间显示，修复图标，紧凑布局，宽度自适应
     import { cubicOut, quintOut } from "svelte/easing";
     import { fade, fly, slide } from "svelte/transition";
     import { onDestroy, onMount } from "svelte";
@@ -105,7 +106,6 @@
     let lastKnownServerAddress = "";
     let lastKnownServerName = "";
     let lastKnownServerPing = 0;
-    let lastLivePlayerPing = 0;
     let lastServerPlayerListEntries: PlayerListEntry[] = [];
     let clientInfoPlayerEntries: PlayerListEntry[] = [];
     let playerDataPlayerEntries: PlayerListEntry[] = [];
@@ -122,7 +122,18 @@
     let showUsername = true;
     let protectedName = "Protected";
 
-    let x = 0, y = 0, z = 0;
+    // 时间显示
+    let currentTime = "";
+    let timeInterval: ReturnType<typeof setInterval> | null = null;
+
+    function updateTime() {
+        const now = new Date();
+        currentTime = now.toLocaleTimeString("en-US", {
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit"
+        });
+    }
 
     function settingValue<T>(names: string[], fallback: T): T {
         for (const name of names) {
@@ -144,7 +155,6 @@
     $: islandWidthSetting = Math.max(0, Math.min(MAX_ISLAND_WIDTH_SETTING, Number.isFinite(rawIslandWidthSetting) ? rawIslandWidthSetting : 50));
     $: islandWidthOffset = (islandWidthSetting - 50) * 3;
     $: showNick = show.includes("Username");
-    $: showCoords = show.includes("Coords");
     $: showFps = show.includes("FPS");
     $: if (!playerListEnabled && playerListOpen) setPlayerListOpen(false);
     $: if (!islandNotificationsEnabled && islandNotifications.length > 0) clearIslandNotifications();
@@ -187,11 +197,11 @@
         }
     ];
 
-    $: compactIslandWidth = showNick && showFps && showCoords
-        ? 438
-        : showNick && (showFps || showCoords)
-            ? 330
-            : 230;
+    $: compactIslandWidth = showNick && showFps
+        ? 330
+        : showNick
+            ? 230
+            : 190;
 
     $: renderedNotifications = editMode && islandNotificationsEnabled ? demoIslandNotifications : islandNotifications;
     $: notificationStack = [...renderedNotifications].reverse();
@@ -199,7 +209,7 @@
     $: islandBaseWidth = showPlayerPanel
         ? 408
         : showScaffoldPanel
-            ? 310 /* scaffold搭路状态下设置310宽度 block后面不会大量留空白 */
+            ? 310
             : showNotificationPanel
                 ? 366
                 : compactIslandWidth;
@@ -212,6 +222,9 @@
         moduleSnapshotInterval = setInterval(updateModules, MODULE_SNAPSHOT_INTERVAL_MS);
         sessionSnapshotInterval = setInterval(updateSession, SESSION_SNAPSHOT_INTERVAL_MS);
         serverSnapshotInterval = setInterval(updateServerSnapshot, SERVER_SNAPSHOT_INTERVAL_MS);
+
+        updateTime();
+        timeInterval = setInterval(updateTime, 1000);
     });
 
     onDestroy(() => {
@@ -219,6 +232,7 @@
         if (moduleSnapshotInterval) clearInterval(moduleSnapshotInterval);
         if (sessionSnapshotInterval) clearInterval(sessionSnapshotInterval);
         if (serverSnapshotInterval) clearInterval(serverSnapshotInterval);
+        if (timeInterval) clearInterval(timeInterval);
         setVanillaPlayerListSuppressed(false);
         clearIslandNotifications();
     });
@@ -259,20 +273,6 @@
     function applyPlayerData(nextPlayerData: PlayerData | null) {
         playerData = nextPlayerData;
         playerDataPlayerEntries = extractPlayerListEntries(nextPlayerData);
-        recordLivePlayerPing(nextPlayerData);
-    }
-
-    function recordLivePlayerPing(nextPlayerData: PlayerData | null | undefined) {
-        const record = asRecord(nextPlayerData);
-        const ping = firstPositiveFiniteNumber(
-            nextPlayerData?.ping,
-            record?.latency,
-            record?.ping
-        );
-
-        if (ping === undefined) return;
-
-        lastLivePlayerPing = Math.round(ping);
     }
 
     async function updateModules() {
@@ -376,7 +376,6 @@
         lastKnownServerAddress = "";
         lastKnownServerName = "";
         lastKnownServerPing = 0;
-        lastLivePlayerPing = 0;
         lastServerPlayerListEntries = [];
         playerListEntries = [];
 
@@ -436,15 +435,6 @@
         for (const value of values) {
             const number = typeof value === "number" ? value : Number(value);
             if (Number.isFinite(number) && number >= 0) return number;
-        }
-
-        return undefined;
-    }
-
-    function firstPositiveFiniteNumber(...values: unknown[]) {
-        for (const value of values) {
-            const number = typeof value === "number" ? value : Number(value);
-            if (Number.isFinite(number) && number > 0) return number;
         }
 
         return undefined;
@@ -905,80 +895,6 @@
             .join(" ");
     }
 
-    function getServerAddress() {
-        if (editMode) return "mc.hypixel.net";
-        const info = asRecord(clientInfo);
-        const currentServer = asRecord(clientInfo?.currentServer);
-        const player = asRecord(playerData);
-
-        return firstString(
-            clientInfo?.serverAddress,
-            clientInfo?.serverIp,
-            currentServer?.address,
-            currentServer?.ip,
-            currentServer?.name,
-            lastKnownServerAddress,
-            lastKnownServerName,
-            getRememberedConnectedServerAddress(),
-            info?.serverAddress,
-            info?.serverIp,
-            info?.server,
-            info?.serverName,
-            info?.serverHost,
-            info?.serverHostPort,
-            info?.remoteAddress,
-            info?.connection?.address,
-            info?.multiplayerServer?.address,
-            player?.serverAddress,
-            player?.serverIp
-        ) ?? (clientInfo?.inGame ? "Server" : "Singleplayer");
-    }
-
-    function getServerPing() {
-        const info = asRecord(clientInfo);
-        const currentServer = asRecord(clientInfo?.currentServer);
-        const player = asRecord(playerData);
-
-        const livePlayerPing = firstPositiveFiniteNumber(
-            playerData?.ping,
-            player?.latency,
-            player?.ping,
-            info?.player?.ping,
-            info?.player?.latency
-        );
-        if (livePlayerPing !== undefined) return Math.round(livePlayerPing);
-
-        if (lastLivePlayerPing > 0) return lastLivePlayerPing;
-
-        const liveOrSnapshotPing = firstPositiveFiniteNumber(
-            currentServer?.ping,
-            info?.serverPing,
-            info?.ping,
-            info?.latency,
-            info?.connection?.ping,
-            info?.multiplayerServer?.ping
-        );
-        if (liveOrSnapshotPing !== undefined) return Math.round(liveOrSnapshotPing);
-
-        if (lastKnownServerPing > 0) return lastKnownServerPing;
-
-        return Math.round(firstFiniteNumber(
-            playerData?.ping,
-            player?.latency,
-            player?.ping,
-            currentServer?.ping,
-            info?.serverPing,
-            info?.ping,
-            info?.latency,
-            info?.connection?.ping,
-            info?.multiplayerServer?.ping
-        ) ?? 0);
-    }
-
-    function formatServerPing(ping: number) {
-        return `${ping}ms`;
-    }
-
     function getNotificationIcon(title: string, severity: NotificationEvent["severity"]) {
         const moduleIcon = moduleIconByName.get(title);
         if (moduleIcon) return moduleIcon;
@@ -1072,9 +988,6 @@
     listen("clientPlayerData", (e: ClientPlayerDataEvent) => {
         if (editMode) return;
         applyPlayerData(e.playerData);
-        x = Math.floor(e.playerData.position.x);
-        y = Math.floor(e.playerData.position.y);
-        z = Math.floor(e.playerData.position.z);
 
         const mainHand = e.playerData.mainHandStack;
         if (mainHand && isBuildableBlock(mainHand.identifier) && mainHand.count > 0) {
@@ -1169,14 +1082,10 @@
         );
     });
 
-    $: dispX = editMode ? 74 : x;
-    $: dispY = editMode ? -60 : y;
-    $: dispZ = editMode ? -241 : z;
     $: dispFps = editMode ? 120 : (clientInfo?.fps ?? 0);
     $: playerName = session?.username ?? playerData?.username ?? "Player";
-    $: serverAddress = getServerAddress();
-    $: serverPing = editMode ? 42 : getServerPing();
-    $: serverPingLabel = formatServerPing(serverPing);
+    $: displayName = showUsername ? playerName : protectedName;
+
     $: scaffoldModuleEnabled = modules.some(m => m.name.toLowerCase() === "scaffold" && m.enabled);
     $: scaffoldProgress = Math.max(0, Math.min(100, (scaffoldCount / MAX_DISPLAY_BLOCKS) * 100));
     $: scaffoldBlockName = formatBlockName(scaffoldBlockId);
@@ -1201,13 +1110,14 @@
     $: expanded = showScaffoldPanel || showPlayerPanel || showNotificationPanel;
 </script>
 
+<!-- ========== 模板 ========== -->
 <div
     class="coordinates-info"
     class:expanded
     class:scaffold-mode={showScaffoldPanel}
     class:player-mode={showPlayerPanel}
     class:notification-mode={showNotificationPanel}
-    style="--island-width: {islandTargetWidth}px;"
+    style="--user-width-offset: {islandWidthOffset}px;"
     transition:fade={{ duration: 150, easing: cubicOut }}
 >
     <div class="island-primary-shell" class:scaffold-primary={showScaffoldPanel}>
@@ -1217,47 +1127,30 @@
                 in:fade|global={{ duration: 110, easing: cubicOut }}
                 out:fade|global={{ duration: 80, easing: cubicOut }}
             >
-                {#if showNick && session}
+                {#if showNick}
                     <div class="value user-value">
-                        <img class="themed-icon-mask info-mask" src="img/hud/information/icon-user.svg" alt="" aria-hidden="true">
-                        <span class="user-name">{showUsername ? session.username : protectedName}</span>
+                        <span class="info-mask icon-user-mask" aria-hidden="true"></span>
+                        <span class="user-name">{displayName}</span>
                     </div>
                 {/if}
 
-                {#if showNick && session && (showFps || showCoords)}
+                {#if showNick && showFps}
                     <span class="dot"></span>
                 {/if}
 
                 {#if showFps}
                     <div class="fps-wrap">
-                        <img class="themed-icon-mask info-mask" src="img/hud/information/icon-fps.svg" alt="" aria-hidden="true">
+                        <span class="info-mask icon-fps-mask" aria-hidden="true"></span>
                         <span class="value">{dispFps}</span>
                         <span class="unit">FPS</span>
                     </div>
                 {/if}
 
-                {#if showFps && showCoords}
+                {#if showFps}
                     <span class="dot"></span>
                 {/if}
 
-                {#if showCoords}
-                    <div class="coords-wrap">
-                        <img class="themed-icon-mask info-mask info-icon" src="img/hud/information/icon-coords.svg" alt="" aria-hidden="true">
-                        <span class="value">{dispX} {dispY} {dispZ}</span>
-                    </div>
-                {/if}
-
-                {#if clientInfo?.inGame || editMode}
-                    <span class="dot"></span>
-                    <div class="server-wrap">
-                        <span class="info-mask info-icon server-icon-mask" aria-hidden="true"></span>
-                        <span class="value server-value">
-                            <span class="server-address">{serverAddress}</span>
-                            <span class="server-separator">&gt;</span>
-                            <span class="server-ping">{serverPingLabel}</span>
-                        </span>
-                    </div>
-                {/if}
+                <span class="value">{currentTime}</span>
             </div>
         {/if}
 
@@ -1362,17 +1255,14 @@
         flex-direction: column;
         align-items: stretch;
         gap: 0;
-        /*半透明毛玻璃 */
         background: rgba(255, 255, 255, 0.35) !important;
         backdrop-filter: blur(12px) !important;
         -webkit-backdrop-filter: blur(12px) !important;
-        /* 微微加深阴影 */
         box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12) !important;
         padding: 10px;
         border-radius: 14px;
-        width: min(var(--island-width), 92vw) !important;
-        min-width: unset !important;
-        max-width: min(560px, 92vw) !important;
+        width: fit-content;
+        max-width: min(560px, 92vw);
         overflow: hidden;
         contain: layout paint;
         transition:
@@ -1382,6 +1272,8 @@
             border-radius 160ms ease-out,
             padding 160ms ease-out;
         will-change: width, border-radius;
+
+        min-width: 0;
 
         &.expanded {
             border-radius: 16px;
@@ -1409,15 +1301,10 @@
     }
 
     .island-main {
-        position: absolute;
-        inset: 0;
         display: flex;
         align-items: center;
-        justify-content: flex-start;
-        gap: 6px;
+        gap: 4px;
         width: 100%;
-        max-width: 100%;
-        min-width: 0;
         overflow: hidden;
         white-space: nowrap;
     }
@@ -1429,24 +1316,25 @@
     .info-mask {
         width: 14px;
         height: 14px;
-        --themed-icon-size: 14px;
-        --themed-icon-color: #ffffff !important;
-        filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.25)) !important;
-    }
-
-    .info-icon {
-        width: 16px;
-        height: 16px;
-        --themed-icon-size: 16px;
-    }
-
-    .server-icon-mask {
-        display: inline-block;
-        flex: 0 0 auto;
+        flex-shrink: 0;
         background-color: #ffffff !important;
         filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.25)) !important;
-        mask: url("/img/hud/information/icon-server.svg") center / contain no-repeat;
-        -webkit-mask: url("/img/hud/information/icon-server.svg") center / contain no-repeat;
+        mask-size: contain;
+        mask-repeat: no-repeat;
+        mask-position: center;
+        -webkit-mask-size: contain;
+        -webkit-mask-repeat: no-repeat;
+        -webkit-mask-position: center;
+    }
+
+    .icon-user-mask {
+        mask-image: url("/img/hud/information/icon-user.svg");
+        -webkit-mask-image: url("/img/hud/information/icon-user.svg");
+    }
+
+    .icon-fps-mask {
+        mask-image: url("/img/hud/information/icon-fps.svg");
+        -webkit-mask-image: url("/img/hud/information/icon-fps.svg");
     }
 
     .value {
@@ -1460,54 +1348,18 @@
     }
 
     .user-value,
-    .fps-wrap,
-    .coords-wrap,
-    .server-wrap {
+    .fps-wrap {
+        flex: 0 0 auto;
         display: flex;
         align-items: center;
         gap: 4px;
-        min-width: 0;
     }
 
-    .user-value {
-        flex: 1 1 96px;
-        max-width: 135px;
-    }
-
-    .fps-wrap,
-    .coords-wrap {
-        flex: 0 0 auto;
-    }
-
-    .server-wrap {
-        flex: 1 1 145px;
-        max-width: 210px;
-    }
-
-    .user-name,
-    .coords-wrap .value {
+    .user-value .user-name {
+        max-width: 120px;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
-    }
-
-    .server-value {
-        display: flex;
-        align-items: center;
-        gap: 4px;
-        max-width: 100%;
-    }
-
-    .server-address {
-        min-width: 0;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-    }
-
-    .server-separator,
-    .server-ping {
-        flex: 0 0 auto;
     }
 
     .dot {
@@ -1534,8 +1386,7 @@
     }
 
     .scaffold-panel {
-        position: absolute;
-        inset: 0;
+        position: relative;
         display: flex;
         align-items: center;
         gap: 16px;
@@ -1612,7 +1463,6 @@
         font-weight: 500;
         color: #000000 !important;
         text-shadow: 0 1px 4px rgba(0, 0, 0, 0.08) !important;
-        /* 【关键防御】：确保无论宽度恢复得多紧凑，blocks 绝对不被压缩和切断 */
         flex-shrink: 0 !important;
         white-space: nowrap !important;
     }

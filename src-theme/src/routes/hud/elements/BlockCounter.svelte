@@ -38,7 +38,7 @@
 <style lang="scss">
 
   .counter {
-    background-color: var(--blockcounter-background-color);
+    background-color: transparent;
     border-radius: 5px;
     white-space: nowrap;
     padding: 5px 8px;

@@ -48,7 +48,14 @@
 
   .keybinds {
     width: max-content;
-    border-radius: 5px;
+    /* 添加同款毛玻璃背景 */
+    background: rgba(255, 255, 255, 0.35) !important;
+    backdrop-filter: blur(12px) !important;
+    -webkit-backdrop-filter: blur(12px) !important;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12) !important;
+    border-radius: 14px;
+    padding: 10px; /* 调整边缘间距，保持紧凑 */
+
     overflow: hidden;
     font-size: 14px;
     min-width: 150px;
@@ -56,8 +63,9 @@
   }
 
   .header {
-    background-color: var(--keybinds-background-color);
-    padding: 7px 10px;
+    /* 移除原背景，让毛玻璃透出 */
+    background-color: transparent !important;
+    padding: 0 0 8px 0; /* 调整内边距以适配外层padding */
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -74,8 +82,8 @@
   }
 
   .entries {
-    background-color: var(--keybinds-header-background-color);
-    padding: 6px 10px;
+    background-color: transparent !important;
+    padding: 0;
     color: var(--keybinds-text-color);
 
     .no-binds {
