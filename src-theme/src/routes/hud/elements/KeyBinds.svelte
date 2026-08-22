@@ -8,7 +8,7 @@
     import BindDisplay from "../../clickgui/setting/bind/BindDisplay.svelte";
 
     let modules: Module[] = $state([]);
-
+//更换背景
     async function updateModulesWithBinds() {
         modules = (await getModules()).filter(m => m.keyBind.boundKey !== UNKNOWN_KEY);
     }
@@ -48,13 +48,12 @@
 
   .keybinds {
     width: max-content;
-    /* 添加同款毛玻璃背景 */
     background: rgba(255, 255, 255, 0.35) !important;
     backdrop-filter: blur(12px) !important;
     -webkit-backdrop-filter: blur(12px) !important;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12) !important;
     border-radius: 14px;
-    padding: 10px; /* 调整边缘间距，保持紧凑 */
+    padding: 10px;
 
     overflow: hidden;
     font-size: 14px;
@@ -63,9 +62,9 @@
   }
 
   .header {
-    /* 移除原背景，让毛玻璃透出 */
+
     background-color: transparent !important;
-    padding: 0 0 8px 0; /* 调整内边距以适配外层padding */
+    padding: 0 0 8px 0;
     display: flex;
     justify-content: space-between;
     align-items: center;
