@@ -83,6 +83,9 @@ import net.minecraft.world.phys.HitResult
 import java.lang.Math.abs
 import java.lang.Math.sqrt
 
+//修复了原版Scaffold 方块在背包里面无法进行搭路的bug  注：当物品栏没有方块时 会自动替换当前物品栏的物品进行交换  2026/8/23
+
+
 /**
  *FIX  fix 来自soudide
  */
@@ -206,15 +209,16 @@ object ModuleScaffold : ClientModule("Scaffold", ModuleCategories.WORLD) {
     private var jumps = 0
     private var nextBlock: Block? = null
 
-    // ---- 新状态（Southside 移植） ----
+    // 抄的南方
     private var originalSlot = -1
     private var bigVelocityTick = 0
 
     val blockCount: Int
         get() {
             fun ItemStack.blockCount() = if (isValidBlock(this)) this.count else 0
+
             return player.offhandItem.blockCount() + if (ScaffoldAutoBlockFeature.enabled) {
-                findPlaceableSlots().sumOf { it.value.blockCount() }
+                findAllPlaceableSlots().sumOf { it.value.blockCount() }
             } else {
                 player.inventory.getItem(player.inventory.selectedSlot).blockCount()
             }
@@ -282,7 +286,7 @@ object ModuleScaffold : ClientModule("Scaffold", ModuleCategories.WORLD) {
         EventManager.callEvent(BlockCountChangeEvent(nextBlock, count))
     }
 
-    // ---- 击退检测（使用反射兼容所有映射） ----
+    //击退检测
     @Suppress("unused")
     private val velocityHandler = handler<PacketEvent> { event ->
         val packet = event.packet
@@ -327,7 +331,7 @@ object ModuleScaffold : ClientModule("Scaffold", ModuleCategories.WORLD) {
         }
     }
 
-    // ---- 全速跑（修改输入） ----
+    //全速跑
     @Suppress("unused")
     private val moveInputHandler = handler<MovementInputEvent>(priority = EventPriorityConvention.SAFETY_FEATURE) { event ->
         if (fullSprint && player.moving) {
@@ -339,7 +343,6 @@ object ModuleScaffold : ClientModule("Scaffold", ModuleCategories.WORLD) {
         }
     }
 
-    // ---- 原有 tickHandler 修改 ----
     @Suppress("unused")
     private val tickHandler = tickHandler {
         updateRenderCount(blockCount)
@@ -475,9 +478,20 @@ object ModuleScaffold : ClientModule("Scaffold", ModuleCategories.WORLD) {
         }
     }
 
-    // ---- 以下为原有辅助方法，未改动 ----
+
     private fun findPlaceableSlots() = buildList(9) {
         for (i in 0..8) {
+            val stack = player.inventory.getItem(i)
+            if (isValidBlock(stack)) {
+                add(IndexedValue(i, stack))
+            }
+        }
+    }
+    /**
+     * 搜索整个背包能用的方块
+     */
+    private fun findAllPlaceableSlots() = buildList(36) {
+        for (i in 0..35) {
             val stack = player.inventory.getItem(i)
             if (isValidBlock(stack)) {
                 add(IndexedValue(i, stack))
@@ -494,6 +508,59 @@ object ModuleScaffold : ClientModule("Scaffold", ModuleCategories.WORLD) {
             ?: placeableSlots.maxWithOrNull { o1, o2 -> BLOCK_COMPARATOR_FOR_HOTBAR.compare(o1.value, o2.value) }
             ?: return null
         return slot
+    }
+
+
+    private fun moveInventoryBlockToHotbar(): Int? {
+        val allSlots = findAllPlaceableSlots()
+        val doNotUseBelowCount = ScaffoldAutoBlockFeature.doNotUseBelowCount
+
+        val inventorySlots = allSlots.filter { (index, _) -> index in 9..35 }
+        if (inventorySlots.isEmpty()) return null
+
+        val (bestInvSlot, _) = inventorySlots
+            .filter { (_, stack) -> stack.count > doNotUseBelowCount }
+            .maxWithOrNull { o1, o2 -> BLOCK_COMPARATOR_FOR_INVENTORY.compare(o1.value, o2.value) }
+            ?: inventorySlots.maxWithOrNull { o1, o2 -> BLOCK_COMPARATOR_FOR_INVENTORY.compare(o1.value, o2.value) }
+            ?: return null
+
+        val targetHotbarSlot = (0..8).firstOrNull { player.inventory.getItem(it).isEmpty }
+            ?: player.inventory.selectedSlot
+
+
+        try {
+            val gameMode = mc.gameMode ?: return null
+            val gameModeClass = gameMode.javaClass
+
+
+            val clickMethod = gameModeClass.methods.firstOrNull { m ->
+                m.parameterTypes.size == 5 &&
+                    m.parameterTypes[0] == Int::class.javaPrimitiveType &&
+                    m.parameterTypes[1] == Int::class.javaPrimitiveType &&
+                    m.parameterTypes[2] == Int::class.javaPrimitiveType &&
+                    m.parameterTypes[3].isEnum &&
+                    m.parameterTypes[4].name.contains("Player")
+            } ?: return null
+
+            val clickTypeClass = clickMethod.parameterTypes[3]
+            val swap = clickTypeClass.enumConstants.firstOrNull {
+                (it as Enum<*>).name == "SWAP"
+            } ?: return null
+
+            clickMethod.invoke(
+                gameMode,
+                player.inventoryMenu.containerId,
+                bestInvSlot,
+                targetHotbarSlot,
+                swap,
+                player
+            )
+
+            return targetHotbarSlot
+        } catch (e: Exception) {
+            logger.error("Failed to swap inventory slot via reflection", e)
+            return null
+        }
     }
 
     internal fun isValidCrosshairTarget(rayTraceResult: BlockHitResult): Boolean {
@@ -543,6 +610,8 @@ object ModuleScaffold : ClientModule("Scaffold", ModuleCategories.WORLD) {
     private fun handleSilentBlockSelection(hasBlockInMainHand: Boolean, hasBlockInOffHand: Boolean): Boolean {
         if (ScaffoldAutoBlockFeature.enabled && !hasBlockInMainHand && !hasBlockInOffHand) {
             val bestMainHandSlot = findBestValidHotbarSlotForTarget()
+                ?: moveInventoryBlockToHotbar()
+
             if (bestMainHandSlot != null) {
                 SilentHotbar.selectSlotSilently(
                     this, bestMainHandSlot,
@@ -555,6 +624,7 @@ object ModuleScaffold : ClientModule("Scaffold", ModuleCategories.WORLD) {
         } else {
             SilentHotbar.resetSlot(this)
         }
+
         return hasBlockInMainHand
     }
 

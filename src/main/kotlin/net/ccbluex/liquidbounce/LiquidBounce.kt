@@ -37,6 +37,7 @@ import net.ccbluex.liquidbounce.event.EventListener
 import net.ccbluex.liquidbounce.event.EventManager
 import net.ccbluex.liquidbounce.event.events.ClientShutdownEvent
 import net.ccbluex.liquidbounce.event.events.ClientStartEvent
+import net.ccbluex.liquidbounce.event.events.OverlayRenderEvent
 import net.ccbluex.liquidbounce.event.events.ScreenEvent
 import net.ccbluex.liquidbounce.event.handler
 import net.ccbluex.liquidbounce.features.account.AccountManager
@@ -85,8 +86,6 @@ import net.minecraft.resources.Identifier
 import net.minecraft.server.packs.resources.PreparableReloadListener
 import net.minecraft.server.packs.resources.ReloadableResourceManager
 import java.io.InputStream
-import java.time.LocalDateTime
-import java.time.format.DateTimeFormatter
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executor
 import kotlin.time.measureTime
@@ -100,6 +99,7 @@ import java.io.IOException
 import kotlinx.coroutines.TimeoutCancellationException
 
 //Fix By 花辞树  删这行的死全家
+//添加了UID显示和检测 2026/8/23
 
 /**
  * LiquidBounce
@@ -150,6 +150,12 @@ object LiquidBounce : EventListener {
     var isInitialized = false
         private set
 
+    /**
+     * 验证通过后存储的三位数字 UID（例如 "001"、"002"）
+     */
+    var clientUid: String? = null
+        internal set
+
     @JvmStatic
     fun identifier(path: String): Identifier = clientIdentifier(path)
 
@@ -187,9 +193,10 @@ object LiquidBounce : EventListener {
     }
 
 
-//这里替换你的HWID验证仓库
+    //这里替换你的HWID验证仓库
     private const val HWID_LIST_URL = "https://gitee.com/Huacishu1/liquid-bounce-nextgen-hwid/raw/master/HWID"
 //你猜我有什么东西没删
+
     private suspend fun verifyClient() {
         if (IN_DEVELOPMENT || System.getProperty("liquidbounce.skipVerification") == "true") {
             logger.warn("HWID verification is disabled (development mode).")
@@ -197,42 +204,53 @@ object LiquidBounce : EventListener {
         }
 
         withContext(Dispatchers.IO) {
-            try {
-                val url = URL(HWID_LIST_URL)
-                val connection = url.openConnection() as HttpURLConnection
-                connection.requestMethod = "GET"
-                connection.connectTimeout = 5000
-                connection.readTimeout = 5000
+            var lastException: Exception? = null
+            repeat(3) { attempt ->
+                try {
+                    val url = URL(HWID_LIST_URL)
+                    val connection = url.openConnection() as HttpURLConnection
+                    connection.requestMethod = "GET"
+                    connection.connectTimeout = 10000   // 10秒
+                    connection.readTimeout = 10000
+                    connection.setRequestProperty("User-Agent", "$CLIENT_NAME/$clientVersion")
+
+                    val responseCode = connection.responseCode
+                    if (responseCode != 200) {
+                        throw IOException("Failed to fetch HWID list, HTTP $responseCode")
+                    }
+
+                    val content = connection.inputStream.bufferedReader().use { it.readText() }
+                    val hwidList = content.lineSequence()
+                        .map { it.trim() }
+                        .filter { it.isNotEmpty() }
+                        .toList()
+
+                    if (hwidList.isEmpty()) {
+                        throw IllegalStateException("HWID list is empty")
+                    }
+
+                    val currentHWID = getHWID()
+                    val index = hwidList.indexOf(currentHWID)
+
+                    if (index == -1) {
+                        throw IllegalStateException("Device not authorized (HWID not in whitelist)")
+                    } else {
+                        val lineNumber = index + 1
+                        clientUid = String.format("%03d", lineNumber)
+                        logger.info("HWID verification passed. (Line $lineNumber, UID: ${clientUid})")
 
 
-                connection.setRequestProperty("User-Agent", "$CLIENT_NAME/$clientVersion")
-
-                val responseCode = connection.responseCode
-                if (responseCode != 200) {
-                    throw IOException("Failed to fetch HWID list, HTTP $responseCode")
+                        return@withContext  // 成功则退出
+                    }
+                } catch (e: Exception) {
+                    lastException = e
+                    logger.warn("HWID verification attempt ${attempt+1}/3 failed: ${e.message}")
+                    if (attempt < 2) delay(2000)  // 等待2秒后重试
                 }
-
-                val content = connection.inputStream.bufferedReader().use { it.readText() }
-                val hwidList = content.lineSequence()
-                    .map { it.trim() }
-                    .filter { it.isNotEmpty() }
-                    .toList()
-
-                if (hwidList.isEmpty()) {
-                    throw IllegalStateException("HWID list is empty")
-                }
-
-                val currentHWID = getHWID()
-                if (currentHWID in hwidList) {
-                    logger.info("HWID verification passed. ($currentHWID)")
-                } else {
-                    logger.warn("HWID not in whitelist: $currentHWID")
-                    throw IllegalStateException("Device not authorized (HWID not in whitelist)")
-                }
-            } catch (e: Exception) {
-                logger.error("HWID verification error", e)
-                throw e
             }
+
+            logger.error("HWID verification failed after 3 attempts", lastException)
+            throw lastException ?: IllegalStateException("HWID verification failed")
         }
     }
 
@@ -252,13 +270,21 @@ object LiquidBounce : EventListener {
             initializeManagers(workerDispatcher, renderThreadDispatcher)
             initializeFeatures()
             initializeResources(workerDispatcher)   // 内部执行 HWID 验证
+
+            // 获取不到 UID 直接关闭游戏（开发模式或跳过验证除外）
+            if (clientUid == null && !IN_DEVELOPMENT
+                && System.getProperty("liquidbounce.skipVerification") != "true") {
+                logger.error("HWID verification failed. Client UID is null. Shutting down.")
+                Runtime.getRuntime().halt(1)
+                return@future
+            }
+
+
             prepareGuiStage(renderThreadDispatcher)
         } catch (e: Exception) {
-            withContext(Dispatchers.Minecraft) {
-                val title = Component.literal("Device Verification Failed")
-                val message = Component.literal(e.message ?: "Unknown verification error")
-                mc.setScreen(ErrorScreen(title, message))
-            }
+
+            logger.error("Client initialization failed: ${e.message}", e)
+            Runtime.getRuntime().halt(1)
             throw e
         }
 
@@ -382,7 +408,6 @@ object LiquidBounce : EventListener {
                 }
             }
 
-
             verificationDeferred.await()
         }
 
@@ -485,6 +510,20 @@ object LiquidBounce : EventListener {
     @Suppress("unused")
     private val shutdownHandler = handler<ClientShutdownEvent> {
         shutdownClient()
+    }
+
+    @Suppress("unused")
+    private val uidRenderHandler = handler<OverlayRenderEvent> { event ->
+        val uid = clientUid ?: return@handler
+
+        val context = event.context
+        val font = mc.font
+        val text = "§7UID: §f$uid"
+
+        val x = 5
+        val y = mc.window.guiScaledHeight - font.lineHeight - 5
+
+        context.text(font, text, x, y, -1, true)
     }
 
     private object ClientResourceReloader : PreparableReloadListener {
