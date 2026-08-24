@@ -45,14 +45,16 @@
 {/if}
 
 <style lang="scss">
-
   .effects {
     display: flex;
     flex-direction: column;
     gap: 4px;
-    background-color: var(--effects-background-color);
-    border-radius: 5px;
-    padding: 4px 6px;
+    background: rgba(255, 255, 255, 0.18) !important;
+    backdrop-filter: blur(12px) !important;
+    -webkit-backdrop-filter: blur(12px) !important;
+    border-radius: 8px;
+    padding: 6px 10px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
   }
 
   .effect {

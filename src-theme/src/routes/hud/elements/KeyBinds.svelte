@@ -8,7 +8,7 @@
     import BindDisplay from "../../clickgui/setting/bind/BindDisplay.svelte";
 
     let modules: Module[] = $state([]);
-//更换背景
+
     async function updateModulesWithBinds() {
         modules = (await getModules()).filter(m => m.keyBind.boundKey !== UNKNOWN_KEY);
     }
@@ -48,11 +48,11 @@
 
   .keybinds {
     width: max-content;
-    background: rgba(255, 255, 255, 0.35) !important;
+    background: rgba(255, 255, 255, 0.18) !important;
     backdrop-filter: blur(12px) !important;
     -webkit-backdrop-filter: blur(12px) !important;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12) !important;
-    border-radius: 14px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
+    border-radius: 8px;
     padding: 10px;
 
     overflow: hidden;

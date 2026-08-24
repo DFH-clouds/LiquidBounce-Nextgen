@@ -39,17 +39,20 @@
 {/if}
 
 <style lang="scss">
-
   .scoreboard {
     width: max-content;
-    border-radius: 5px;
+    border-radius: 8px;
     overflow: hidden;
     font-size: 14px;
+    background: rgba(255, 255, 255, 0.18) !important;
+    backdrop-filter: blur(12px) !important;
+    -webkit-backdrop-filter: blur(12px) !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
   }
 
   .entries {
-    background-color: var(--scoreboard-body-background-color);
-    padding: 10px;
+    background-color: transparent !important;
+    padding: 8px 10px;
   }
 
   .row {
@@ -60,7 +63,8 @@
 
   .header {
     text-align: center;
-    background-color: var(--scoreboard-header-background-color);
-    padding: 7px 10px;
+    background-color: transparent !important;
+    padding: 5px 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   }
 </style>

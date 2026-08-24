@@ -1,29 +1,15 @@
 <script lang="ts">
     import OptionBar from "../common/optionbar/OptionBar.svelte";
     import MenuList from "../common/menulist/MenuList.svelte";
-    import BottomButtonWrapper from "../common/buttons/BottomButtonWrapper.svelte";
-    import ButtonContainer from "../common/buttons/ButtonContainer.svelte";
-    import IconTextButton from "../common/buttons/IconTextButton.svelte";
     import Menu from "../common/Menu.svelte";
     import Search from "../common/Search.svelte";
     import MenuListItem from "../common/menulist/MenuListItem.svelte";
     import MenuListItemButton from "../common/menulist/MenuListItemButton.svelte";
-    import {onMount} from "svelte";
+    import {onMount, onDestroy} from "svelte";   
     import {
-        browse,
-        connectToServer,
-        getClientInfo,
-        getModule,
-        getProtocols,
-        getSelectedProtocol,
-        getServers,
-        getSpooferSettings,
-        openScreen,
-        orderServers,
-        removeServer as removeServerRest,
-        setModuleEnabled,
-        setSelectedProtocol,
-        setSpooferSettings
+        browse, connectToServer, getClientInfo, getModule, getProtocols, getSelectedProtocol,
+        getServers, getSpooferSettings, openScreen, orderServers,
+        removeServer as removeServerRest, setModuleEnabled, setSelectedProtocol, setSpooferSettings
     } from "../../../integration/rest";
     import type {ClientInfo, ConfigurableSetting, Protocol, Server} from "../../../integration/types";
     import {listen} from "../../../integration/ws";
@@ -44,18 +30,13 @@
     let searchQuery = "";
     let addServerModalVisible = false;
     let directConnectModalVisible = false;
-
     let editServerModalVisible = false;
     let currentEditServer: Server | null = null;
 
     $: {
         let filteredServers = servers;
-        if (onlineOnly) {
-            filteredServers = filteredServers.filter(s => s.ping > 0);
-        }
-        if (searchQuery) {
-            filteredServers = filteredServers.filter(s => s.name.toLowerCase().includes(searchQuery.toLowerCase()));
-        }
+        if (onlineOnly) filteredServers = filteredServers.filter(s => s.ping > 0);
+        if (searchQuery) filteredServers = filteredServers.filter(s => s.name.toLowerCase().includes(searchQuery.toLowerCase()));
         renderedServers = filteredServers;
     }
 
@@ -65,18 +46,30 @@
     let servers: Server[] = [];
     let renderedServers: Server[] = [];
     let protocols: Protocol[] = [];
-    let selectedProtocol: Protocol = {
-        name: "",
-        version: -1
-    };
-
-    // The amount of times the server list has been sorted.
-    // It is only used in the key-block below to cause a full re-render after the server have been sorted.
-    // This is necessary because LiquidBounce references servers by their index (the id).
-    // The id does not change when the element is being sorted.
-    // I'm not keying on 'servers' because I don't want to re-render the entire list every time a ping event is received.
-    // This is a hack and there should be a better solution.
+    let selectedProtocol: Protocol = { name: "", version: -1 };
     let timesSorted = 0;
+
+    let showBottomButtons = true;
+
+    function onWindowFocus() {
+        showBottomButtons = true;
+        window.removeEventListener('focus', onWindowFocus); // 一次性
+    }
+//检查是否打开跨版本页面
+    function handleViaFabricPlus() {
+        showBottomButtons = false;
+        openScreen("viafabricplus_protocol_selection");
+        window.addEventListener('focus', onWindowFocus, { once: true });
+        // 若 focus 不触发，可考虑轮询检测（下方注释示例）
+        // 启动轮询检测跨版本页面是否消失（需提供选择器）
+        // const checkInterval = setInterval(() => {
+        //     const screenExists = document.querySelector('.viafabricplus-screen');
+        //     if (!screenExists) {
+        //         showBottomButtons = true;
+        //         clearInterval(checkInterval);
+        //     }
+        // }, 500);
+    }
 
     onMount(async () => {
         clientInfo = await getClientInfo();
@@ -86,6 +79,12 @@
         renderedServers = servers;
         protocols = await getProtocols();
         selectedProtocol = await getSelectedProtocol();
+        showBottomButtons = true;
+    });
+
+    onDestroy(() => {
+
+        window.removeEventListener('focus', onWindowFocus);
     });
 
     listen("serverPinged", (pingedEvent: ServerPingedEvent) => {
@@ -93,77 +92,44 @@
         servers = servers.map((s) => {
             if (s.address === server.address) {
                 const clone = structuredClone(server);
-                clone.id = s.id;
-                clone.name = s.name;
-                clone.resourcePackPolicy = s.resourcePackPolicy;
+                clone.id = s.id; clone.name = s.name; clone.resourcePackPolicy = s.resourcePackPolicy;
                 return clone;
-            } else {
-                return s;
-            }
+            } else return s;
         });
     });
 
-    async function refreshServers() {
-        servers = await getServers();
-    }
-
-    async function removeServer(index: number) {
-        await removeServerRest(index);
-        await refreshServers();
-    }
+    async function refreshServers() { servers = await getServers(); }
+    async function removeServer(index: number) { await removeServerRest(index); await refreshServers(); }
 
     function getPingColor(ping: number) {
-        if (ping < 0) {
-            return "#E84C3D";
-        }
-
-        if (ping <= 50) {
-            return "#2DCC70";
-        } else if (ping <= 100) {
-            return "#F1C40F";
-        } else {
-            return "#E84C3D";
-        }
+        if (ping < 0) return "#E84C3D";
+        if (ping <= 50) return "#2DCC70";
+        if (ping <= 100) return "#F1C40F";
+        return "#E84C3D";
     }
 
     async function changeProtocolVersion(e: CustomEvent<{ value: string }>) {
         const p = protocols.find(p => p.name == e.detail.value);
-        if (!p) {
-            return;
-        }
-
+        if (!p) return;
         await setSelectedProtocol(p);
         selectedProtocol = await getSelectedProtocol();
     }
 
     async function handleServerSort(e: CustomEvent<{ newOrder: number[] }>) {
         await orderServers(e.detail.newOrder);
-        await refreshServers();
-        renderedServers = servers;
-        timesSorted++; // See declaration
+        await refreshServers(); renderedServers = servers; timesSorted++;
     }
 
-    function handleSearch(e: CustomEvent<{ query: string }>) {
-        searchQuery = e.detail.query;
-    }
-
-    function editServer(server: Server) {
-        currentEditServer = server;
-        editServerModalVisible = true;
-    }
+    function handleSearch(e: CustomEvent<{ query: string }>) { searchQuery = e.detail.query; }
+    function editServer(server: Server) { currentEditServer = server; editServerModalVisible = true; }
 
     async function updateSpooferSettings() {
-        if (!spooferConfigurable) {
-            return;
-        }
-
+        if (!spooferConfigurable) return;
         await setSpooferSettings(spooferConfigurable);
         spooferConfigurable = await getSpooferSettings();
     }
 
-    async function updateAutoConfigState() {
-        await setModuleEnabled("AutoConfig", autoConfig);
-    }
+    async function updateAutoConfigState() { await setModuleEnabled("AutoConfig", autoConfig); }
 </script>
 
 <AddServerModal bind:visible={addServerModalVisible} on:serverAdd={refreshServers}/>
@@ -173,10 +139,10 @@
                      resourcePackPolicy={currentEditServer.resourcePackPolicy}/>
 {/if}
 <DirectConnectModal bind:visible={directConnectModalVisible}/>
+
 <Menu>
     <OptionBar>
         <Search on:search={handleSearch}/>
-
         <SwitchSetting title="Online only" bind:value={onlineOnly}/>
         <Divider/>
         <SwitchSetting title="Auto Config" bind:value={autoConfig} on:change={updateAutoConfigState}/>
@@ -186,7 +152,8 @@
         {#if clientInfo && clientInfo.viaFabricPlus}
             <SingleSelect title="Version" value={selectedProtocol.name} options={protocols.map(p => p.name)}
                           on:change={changeProtocolVersion}/>
-            <ButtonSetting title="ViaFabricPlus" on:click={() => openScreen("viafabricplus_protocol_selection")}/>
+            <!-- 修改点击事件为 handleViaFabricPlus -->
+            <ButtonSetting title="ViaFabricPlus" on:click={handleViaFabricPlus}/>
         {:else}
             <ButtonSetting title="Install ViaFabricPlus" on:click={() => browse("VIAFABRICPLUS")}/>
         {/if}
@@ -227,15 +194,94 @@
         {/key}
     </MenuList>
 
-    <BottomButtonWrapper>
-        <ButtonContainer>
-            <IconTextButton icon="icon-plus-circle.svg" title="Add" on:click={() => addServerModalVisible = true}/>
-            <IconTextButton icon="icon-plane.svg" title="Direct" on:click={() => directConnectModalVisible = true}/>
-            <IconTextButton icon="icon-refresh.svg" title="Refresh" on:click={refreshServers}/>
-        </ButtonContainer>
-
-        <ButtonContainer>
-            <IconTextButton icon="icon-back.svg" title="Back" on:click={() => openScreen("title")}/>
-        </ButtonContainer>
-    </BottomButtonWrapper>
+    <!-- 底部圆形按钮：条件渲染 -->
+    {#if showBottomButtons}
+        <div class="bottom-buttons">
+            <button class="circle-button" on:click={() => addServerModalVisible = true}>
+                <svg class="icon-img" viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z"/></svg>
+                <span class="label">ADD</span>
+            </button>
+            <button class="circle-button" on:click={() => directConnectModalVisible = true}>
+                <svg class="icon-img" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+                <span class="label">DIRECT</span>
+            </button>
+            <button class="circle-button" on:click={refreshServers}>
+                <svg class="icon-img" viewBox="0 0 24 24" fill="currentColor"><path d="M17.65 6.35A8 8 0 1 0 19.73 14h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+                <span class="label">REFRESH</span>
+            </button>
+            <button class="circle-button" on:click={() => openScreen("title")}>
+                <svg class="icon-img" viewBox="0 0 24 24" fill="currentColor"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+                <span class="label">BACK</span>
+            </button>
+        </div>
+    {/if}
 </Menu>
+
+<style lang="scss">
+    .bottom-buttons {
+        position: absolute;
+        bottom: clamp(15px, 4vh, 35px);
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        gap: clamp(12px, 3vw, 25px);
+        flex-wrap: wrap;
+        justify-content: center;
+        max-width: 90vw;
+    }
+
+    .circle-button {
+        width: clamp(70px, 11vw, 95px);
+        height: clamp(70px, 11vw, 95px);
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.08);
+        border: 2px solid rgba(255, 255, 255, 0.15);
+        color: white;
+        cursor: pointer;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.25s ease;
+        font-family: inherit;
+        padding: 0;
+        outline: none;
+        backdrop-filter: blur(2px);
+        flex-shrink: 0;
+    }
+
+    .circle-button:hover {
+        background: rgba(255, 255, 255, 0.2);
+        border-color: rgba(255, 255, 255, 0.4);
+        transform: scale(1.06);
+        box-shadow: 0 0 25px rgba(255, 255, 255, 0.15);
+    }
+
+    .circle-button:active {
+        transform: scale(0.95);
+    }
+
+    .circle-button .icon-img {
+        width: clamp(22px, 4vw, 28px);
+        height: clamp(22px, 4vw, 28px);
+        filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4));
+        display: block;
+    }
+
+    .circle-button .label {
+        font-size: clamp(10px, 1.8vw, 13px);
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-top: 2px;
+        text-shadow: 0 2px 10px rgba(0,0,0,0.6);
+        white-space: nowrap;
+    }
+
+    @media (max-width: 600px) {
+        .bottom-buttons { gap: 10px; bottom: 10px; }
+        .circle-button { width: 60px; height: 60px; }
+        .circle-button .icon-img { width: 20px; height: 20px; }
+        .circle-button .label { font-size: 9px; }
+    }
+</style>

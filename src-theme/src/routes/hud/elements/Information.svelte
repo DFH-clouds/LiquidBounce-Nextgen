@@ -1110,7 +1110,7 @@
     $: expanded = showScaffoldPanel || showPlayerPanel || showNotificationPanel;
 </script>
 
-<!-- ========== 模板 ========== -->
+
 <div
     class="coordinates-info"
     class:expanded
@@ -1255,12 +1255,12 @@
         flex-direction: column;
         align-items: stretch;
         gap: 0;
-        background: rgba(255, 255, 255, 0.35) !important;
+        background: rgba(255, 255, 255, 0.18) !important;
         backdrop-filter: blur(12px) !important;
         -webkit-backdrop-filter: blur(12px) !important;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12) !important;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
         padding: 10px;
-        border-radius: 14px;
+        border-radius: 8px;
         width: fit-content;
         max-width: min(560px, 92vw);
         overflow: hidden;
@@ -1276,7 +1276,7 @@
         min-width: 0;
 
         &.expanded {
-            border-radius: 16px;
+            border-radius: 16px;   /* 保留原展开样式 */
         }
 
         &.notification-mode:not(.player-mode) {
@@ -1483,7 +1483,7 @@
         min-height: 42px;
         padding: 7px 8px;
         border-radius: 12px;
-        background: rgba(0, 0, 0, 0.06) !important;
+        background: rgba(0, 0, 0, 0.06) !important;  /* 保持原样，不修改 */
         overflow: hidden;
         contain: layout paint;
         transition: opacity 120ms ease-out, background 120ms ease-out;

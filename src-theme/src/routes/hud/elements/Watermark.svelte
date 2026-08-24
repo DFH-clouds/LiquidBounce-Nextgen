@@ -121,12 +121,12 @@
     .content-wrapper { display: flex; align-items: center; }
 
     :global(.watermark-onetap) {
-        background: rgba(255, 255, 255, 0.35) !important;
+        background: rgba(255, 255, 255, 0.18) !important;
         backdrop-filter: blur(12px) !important;
         -webkit-backdrop-filter: blur(12px) !important;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12) !important;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
         padding: 8px 12px;
-        border-radius: 12px;
+        border-radius: 8px;
         display: inline-flex;
         align-items: center;
         font-weight: 500;
