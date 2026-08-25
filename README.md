@@ -23,9 +23,9 @@ issue [here](https://github.com/CCBlueX/LiquidBounce/issues).
 ## 下面是一些图片 实际效果B站也发过视频 视频链接： 
 https://www.bilibili.com/video/BV1Jj8v65Erf/?spm_id_from=333.1387.homepage.video_card.click
 
-![img.png](img.png)
+<img alt="img.png" src="img.png"/>
 
-![img_1.png](img_1.png)
+<img alt="img_1.png" src="img_1.png"/>
 
 
 ## License
