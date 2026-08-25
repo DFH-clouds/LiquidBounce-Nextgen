@@ -5,7 +5,7 @@
     import Search from "../common/Search.svelte";
     import MenuListItem from "../common/menulist/MenuListItem.svelte";
     import MenuListItemButton from "../common/menulist/MenuListItemButton.svelte";
-    import {onMount, onDestroy} from "svelte";   
+    import {onMount, onDestroy} from "svelte";
     import {
         browse, connectToServer, getClientInfo, getModule, getProtocols, getSelectedProtocol,
         getServers, getSpooferSettings, openScreen, orderServers,
@@ -50,25 +50,33 @@
     let timesSorted = 0;
 
     let showBottomButtons = true;
+    let isConnecting = false;
 
     function onWindowFocus() {
         showBottomButtons = true;
-        window.removeEventListener('focus', onWindowFocus); // 一次性
+        window.removeEventListener('focus', onWindowFocus);
     }
-//检查是否打开跨版本页面
+
     function handleViaFabricPlus() {
         showBottomButtons = false;
         openScreen("viafabricplus_protocol_selection");
         window.addEventListener('focus', onWindowFocus, { once: true });
-        // 若 focus 不触发，可考虑轮询检测（下方注释示例）
-        // 启动轮询检测跨版本页面是否消失（需提供选择器）
-        // const checkInterval = setInterval(() => {
-        //     const screenExists = document.querySelector('.viafabricplus-screen');
-        //     if (!screenExists) {
-        //         showBottomButtons = true;
-        //         clearInterval(checkInterval);
-        //     }
-        // }, 500);
+    }
+
+    async function handleConnect(address: string) {
+        if (isConnecting) return;
+        isConnecting = true;
+
+        showBottomButtons = false;
+        window.addEventListener('focus', onWindowFocus, { once: true });
+
+        try {
+            await connectToServer(address);
+        } catch (err) {
+            console.error("Connection failed", err);
+        } finally {
+            isConnecting = false;
+        }
     }
 
     onMount(async () => {
@@ -83,7 +91,6 @@
     });
 
     onDestroy(() => {
-
         window.removeEventListener('focus', onWindowFocus);
     });
 
@@ -152,7 +159,6 @@
         {#if clientInfo && clientInfo.viaFabricPlus}
             <SingleSelect title="Version" value={selectedProtocol.name} options={protocols.map(p => p.name)}
                           on:change={changeProtocolVersion}/>
-            <!-- 修改点击事件为 handleViaFabricPlus -->
             <ButtonSetting title="ViaFabricPlus" on:click={handleViaFabricPlus}/>
         {:else}
             <ButtonSetting title="Install ViaFabricPlus" on:click={() => browse("VIAFABRICPLUS")}/>
@@ -169,7 +175,7 @@
                             ? `${REST_BASE}/api/v1/client/resource?id=minecraft:textures/misc/unknown_server.png`
                             :`data:image/png;base64,${server.icon}`}
                               title={server.name}
-                              on:dblclick={() => connectToServer(server.address)}>
+                              on:dblclick={() => handleConnect(server.address)}>
                     <TextComponent allowPreformatting={true} preFormattingMonospace={false} slot="subtitle"
                                    fontSize={18}
                                    textComponent={server.ping <= 0 ? "§CCan't connect to server" : server.label}/>
@@ -187,14 +193,13 @@
                     </svelte:fragment>
 
                     <svelte:fragment slot="always-visible">
-                        <MenuListItemButton title="Join" icon="play" on:click={() => connectToServer(server.address)}/>
+                        <MenuListItemButton title="Join" icon="play" on:click={() => handleConnect(server.address)}/>
                     </svelte:fragment>
                 </MenuListItem>
             {/each}
         {/key}
     </MenuList>
 
-    <!-- 底部圆形按钮：条件渲染 -->
     {#if showBottomButtons}
         <div class="bottom-buttons">
             <button class="circle-button" on:click={() => addServerModalVisible = true}>

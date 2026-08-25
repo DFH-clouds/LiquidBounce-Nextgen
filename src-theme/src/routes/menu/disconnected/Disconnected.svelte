@@ -53,5 +53,31 @@
     flex-direction: column;
     row-gap: 10px;
     align-items: flex-start;
+
+    :global(.button-setting) {
+      --menu-button-background-color: rgba(255, 255, 255, 0.18);
+      --menu-button-hover-background-color: rgba(255, 255, 255, 0.35);
+      --menu-button-secondary-background-color: rgba(255, 255, 255, 0.18);
+      --menu-button-secondary-hover-background-color: rgba(255, 255, 255, 0.35);
+
+      background-color: var(--menu-button-background-color);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+      padding: 6px 14px;
+      font-size: 14px;
+      font-weight: 500;
+      color: #1a1a1a;
+      border: none;
+
+      &:hover:not([disabled]) {
+        background-color: var(--menu-button-hover-background-color);
+      }
+
+      &[disabled] {
+        opacity: 0.4;
+      }
+    }
   }
 </style>

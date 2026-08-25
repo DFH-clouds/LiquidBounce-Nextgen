@@ -8,15 +8,12 @@
         restoreSession,
         setAccountFavorite
     } from "../../../integration/rest.js";
-    import BottomButtonWrapper from "../common/buttons/BottomButtonWrapper.svelte";
     import SwitchSetting from "../common/setting/SwitchSetting.svelte";
     import OptionBar from "../common/optionbar/OptionBar.svelte";
     import MenuListItem from "../common/menulist/MenuListItem.svelte";
     import Menu from "../common/Menu.svelte";
-    import ButtonContainer from "../common/buttons/ButtonContainer.svelte";
     import MenuListItemTag from "../common/menulist/MenuListItemTag.svelte";
     import MenuList from "../common/menulist/MenuList.svelte";
-    import IconTextButton from "../common/buttons/IconTextButton.svelte";
     import Search from "../common/Search.svelte";
     import MenuListItemButton from "../common/menulist/MenuListItemButton.svelte";
     import type {Account} from "../../../integration/types";
@@ -157,23 +154,119 @@
         {/key}
     </MenuList>
 
-    <BottomButtonWrapper>
-        <ButtonContainer>
-            <IconTextButton icon="icon-plus-circle.svg" title="Add" on:click={() => addAccountModalVisible = true}/>
-            <IconTextButton icon="icon-plane.svg" title="Direct" on:click={() => directLoginModalVisible = true}/>
-            <IconTextButton icon="icon-random.svg" disabled={renderedAccounts.length === 0} title="Random"
-                            on:click={loginToRandomAccount}/>
-            <IconTextButton icon="icon-refresh.svg" title="Restore" on:click={restoreSession}/>
-        </ButtonContainer>
+    <div class="bottom-buttons">
+        <button class="circle-button" on:click={() => addAccountModalVisible = true}>
+            <svg class="icon-img" viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z"/></svg>
+            <span class="label">ADD</span>
+        </button>
 
-        <ButtonContainer>
-            <IconTextButton icon="icon-back.svg" title="Back" on:click={() => deleteScreen()}/>
-        </ButtonContainer>
-    </BottomButtonWrapper>
+        <button class="circle-button" on:click={() => directLoginModalVisible = true}>
+            <svg class="icon-img" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+            <span class="label">DIRECT</span>
+        </button>
+
+        <button class="circle-button" disabled={renderedAccounts.length === 0} on:click={loginToRandomAccount}>
+            <svg class="icon-img" viewBox="0 0 24 24" fill="currentColor"><path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm0.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/></svg>
+            <span class="label">RANDOM</span>
+        </button>
+
+        <button class="circle-button" on:click={restoreSession}>
+            <svg class="icon-img" viewBox="0 0 24 24" fill="currentColor"><path d="M17.65 6.35A8 8 0 1 0 19.73 14h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+            <span class="label">RESTORE</span>
+        </button>
+
+        <button class="circle-button" on:click={() => deleteScreen()}>
+            <svg class="icon-img" viewBox="0 0 24 24" fill="currentColor"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+            <span class="label">BACK</span>
+        </button>
+    </div>
 </Menu>
 
 <style lang="scss">
-  .uuid {
-    font-family: monospace;
-  }
+    .uuid {
+        font-family: monospace;
+    }
+
+    .bottom-buttons {
+        position: absolute;
+        bottom: clamp(15px, 4vh, 35px);
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        gap: clamp(12px, 3vw, 25px);
+        flex-wrap: wrap;
+        justify-content: center;
+        max-width: 90vw;
+    }
+
+    .circle-button {
+        width: clamp(70px, 11vw, 95px);
+        height: clamp(70px, 11vw, 95px);
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.08);
+        border: 2px solid rgba(255, 255, 255, 0.15);
+        color: white;
+        cursor: pointer;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.25s ease;
+        font-family: inherit;
+        padding: 0;
+        outline: none;
+        backdrop-filter: blur(2px);
+        flex-shrink: 0;
+
+        &:hover:not(:disabled) {
+            background: rgba(255, 255, 255, 0.2);
+            border-color: rgba(255, 255, 255, 0.4);
+            transform: scale(1.06);
+            box-shadow: 0 0 25px rgba(255, 255, 255, 0.15);
+        }
+
+        &:active:not(:disabled) {
+            transform: scale(0.95);
+        }
+
+        &:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .icon-img {
+            width: clamp(22px, 4vw, 28px);
+            height: clamp(22px, 4vw, 28px);
+            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4));
+            display: block;
+        }
+
+        .label {
+            font-size: clamp(10px, 1.8vw, 13px);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-top: 2px;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.6);
+            white-space: nowrap;
+        }
+    }
+
+    @media (max-width: 600px) {
+        .bottom-buttons {
+            gap: 10px;
+            bottom: 10px;
+        }
+        .circle-button {
+            width: 60px;
+            height: 60px;
+        }
+        .circle-button .icon-img {
+            width: 20px;
+            height: 20px;
+        }
+        .circle-button .label {
+            font-size: 9px;
+        }
+    }
 </style>

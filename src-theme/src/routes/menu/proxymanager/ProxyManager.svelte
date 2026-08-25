@@ -10,14 +10,11 @@
         removeProxy as removeProxyRest,
         setProxyFavorite,
     } from "../../../integration/rest.js";
-    import BottomButtonWrapper from "../common/buttons/BottomButtonWrapper.svelte";
     import OptionBar from "../common/optionbar/OptionBar.svelte";
     import MenuListItem from "../common/menulist/MenuListItem.svelte";
     import Menu from "../common/Menu.svelte";
-    import ButtonContainer from "../common/buttons/ButtonContainer.svelte";
     import MenuListItemTag from "../common/menulist/MenuListItemTag.svelte";
     import MenuList from "../common/menulist/MenuList.svelte";
-    import IconTextButton from "../common/buttons/IconTextButton.svelte";
     import Search from "../common/Search.svelte";
     import MenuListItemButton from "../common/menulist/MenuListItemButton.svelte";
     import type {Proxy} from "../../../integration/types";
@@ -94,7 +91,7 @@
     }
 
     function handleProxySort() {
-
+        // 留空
     }
 
     async function removeProxy(id: number) {
@@ -184,6 +181,7 @@
                     password={currentEditProxy.credentials?.password ?? ""}
                     requiresAuthentication={currentEditProxy.credentials !== undefined}/>
 {/if}
+
 <Menu>
     <OptionBar>
         <Search on:search={handleSearch}/>
@@ -223,18 +221,115 @@
         {/each}
     </MenuList>
 
-    <BottomButtonWrapper>
-        <ButtonContainer>
-            <IconTextButton icon="icon-plus-circle.svg" title="Add" on:click={() => addProxyModalVisible = true}/>
-            <IconTextButton icon="icon-clipboard.svg" title="Add Clipboard" on:click={() => fromClipboard() } />
-            <IconTextButton icon="icon-random.svg" disabled={renderedProxies.length === 0} title="Random"
-                            on:click={connectToRandomProxy}/>
-            <IconTextButton icon="icon-disconnect.svg" disabled={!isConnectedToProxy} title="Disconnect"
-                            on:click={disconnectFromProxy}/>
-        </ButtonContainer>
+    <div class="bottom-buttons">
+        <button class="circle-button" on:click={() => addProxyModalVisible = true}>
+            <svg class="icon-img" viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z"/></svg>
+            <span class="label">ADD</span>
+        </button>
 
-        <ButtonContainer>
-            <IconTextButton icon="icon-back.svg" title="Back" on:click={() => deleteScreen()}/>
-        </ButtonContainer>
-    </BottomButtonWrapper>
+        <button class="circle-button" on:click={fromClipboard}>
+            <svg class="icon-img" viewBox="0 0 24 24" fill="currentColor"><path d="M19 3h-4.18C14.4 1.84 13.3 1 12 1s-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm2 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
+            <span class="label">CLIPBOARD</span>
+        </button>
+
+        <button class="circle-button" disabled={renderedProxies.length === 0} on:click={connectToRandomProxy}>
+            <svg class="icon-img" viewBox="0 0 24 24" fill="currentColor"><path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm0.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/></svg>
+            <span class="label">RANDOM</span>
+        </button>
+
+        <button class="circle-button" disabled={!isConnectedToProxy} on:click={disconnectFromProxy}>
+            <svg class="icon-img" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm5 11H7v-2h10v2z"/></svg>
+            <span class="label">DISCONNECT</span>
+        </button>
+
+        <button class="circle-button" on:click={() => deleteScreen()}>
+            <svg class="icon-img" viewBox="0 0 24 24" fill="currentColor"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+            <span class="label">BACK</span>
+        </button>
+    </div>
 </Menu>
+
+<style lang="scss">
+    .bottom-buttons {
+        position: absolute;
+        bottom: clamp(15px, 4vh, 35px);
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        gap: clamp(12px, 3vw, 25px);
+        flex-wrap: wrap;
+        justify-content: center;
+        max-width: 90vw;
+    }
+
+    .circle-button {
+        width: clamp(70px, 11vw, 95px);
+        height: clamp(70px, 11vw, 95px);
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.08);
+        border: 2px solid rgba(255, 255, 255, 0.15);
+        color: white;
+        cursor: pointer;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.25s ease;
+        font-family: inherit;
+        padding: 0;
+        outline: none;
+        backdrop-filter: blur(2px);
+        flex-shrink: 0;
+
+        &:hover:not(:disabled) {
+            background: rgba(255, 255, 255, 0.2);
+            border-color: rgba(255, 255, 255, 0.4);
+            transform: scale(1.06);
+            box-shadow: 0 0 25px rgba(255, 255, 255, 0.15);
+        }
+
+        &:active:not(:disabled) {
+            transform: scale(0.95);
+        }
+
+        &:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .icon-img {
+            width: clamp(22px, 4vw, 28px);
+            height: clamp(22px, 4vw, 28px);
+            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4));
+            display: block;
+        }
+
+        .label {
+            font-size: clamp(10px, 1.8vw, 13px);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-top: 2px;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.6);
+            white-space: nowrap;
+        }
+    }
+
+    @media (max-width: 600px) {
+        .bottom-buttons {
+            gap: 10px;
+            bottom: 10px;
+        }
+        .circle-button {
+            width: 60px;
+            height: 60px;
+        }
+        .circle-button .icon-img {
+            width: 20px;
+            height: 20px;
+        }
+        .circle-button .label {
+            font-size: 9px;
+        }
+    }
+</style>

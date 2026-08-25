@@ -99,7 +99,7 @@ import java.io.IOException
 import kotlinx.coroutines.TimeoutCancellationException
 
 //Fix By 花辞树  删这行的死全家
-//添加了UID显示和检测 2026/8/23
+//添加了UID显示和检测 2026/8/23 原理：通过查询HWID所在的行数 来生成uid 例如HWID在第一行 则为001以此类推
 
 /**
  * LiquidBounce
