@@ -3,19 +3,30 @@
     <img width="200" src="https://raw.githubusercontent.com/CCBlueX/LiquidCloud/master/LiquidBounce/liquidbounceLogo.svg">
 </p>
 
-[Website](https://liquidbounce.net) |
-[Forum](https://forums.ccbluex.net) |
-[Discord](https://liquidbounce.net/discord) |
-[YouTube](https://youtube.com/CCBlueX) |
-[X](https://x.com/CCBlueX)
+
+[Release](https://github.com/DFH-clouds/LiquidBounce-Nextgen/releases)|
+[GuiHub](https://github.com/DFH-clouds/LiquidBounce-Nextgen)|
+[LiquidBounce](https://github.com/CCBlueX/LiquidBounce)
 </div>
 
-LiquidBounce is a free and open-source mixin-based injection hacked client using the Fabric API for Minecraft Fix Pass hypixel
-By 花辞树
+LiquidBounce is a free and open-source mixin-based injection hacked client using the Fabric API for Minecraft.
+
 ## Issues
 
 If you notice any bugs or missing features, you can let us know by opening an
 issue [here](https://github.com/CCBlueX/LiquidBounce/issues).
+
+## FIX By 花辞树
+ 在原版LiquidBounce NextGen的基础上 重置了原版的Theme UI并添加了部分绕过Heypixel的模块 本项目仅供娱乐 自己闲的写出来的 写的屎山代码 不喜勿喷 //作者QQ：3798753732
+
+
+## 下面是一些图片 实际效果B站也发过视频 视频链接： 
+https://www.bilibili.com/video/BV1Jj8v65Erf/?spm_id_from=333.1387.homepage.video_card.click
+
+![img.png](img.png)
+
+![img_1.png](img_1.png)
+
 
 ## License
 
@@ -46,7 +57,7 @@ LiquidBounce uses Gradle; to make sure that it is installed properly, you can
 check [Gradle's website](https://gradle.org/install/). It also requires [Node.js](https://nodejs.org) to be installed for
 our [theme](https://github.com/CCBlueX/LiquidBounce/tree/nextgen/src-theme).
 
-1. Clone the repository using `git clone --recurse-submodules https://github.com/CCBlueX/LiquidBounce`.
+1. Clone the repository using `git clone --recurse-submodules https://github.com/DFH-clouds/LiquidBounce-Nextgen`.
 2. CD into the local repository. (`cd LiquidBounce`)
 3. Run `./gradlew genSources` for better development experience (Optional).
 4. Open the folder as a Gradle project in your preferred IDE.
