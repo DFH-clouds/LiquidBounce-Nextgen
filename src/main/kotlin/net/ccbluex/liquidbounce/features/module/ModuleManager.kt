@@ -34,6 +34,7 @@ import net.ccbluex.liquidbounce.event.sequenceHandler
 import net.ccbluex.liquidbounce.event.tickUntil
 import net.ccbluex.liquidbounce.features.module.modules.combat.ModuleAimbot
 import net.ccbluex.liquidbounce.features.module.modules.combat.ModuleAutoClicker
+import net.ccbluex.liquidbounce.features.module.modules.combat.ModuleAutoL
 import net.ccbluex.liquidbounce.features.module.modules.world.automobheal.AutoMobHeal
 import net.ccbluex.liquidbounce.features.module.modules.combat.ModuleAutoLeave
 import net.ccbluex.liquidbounce.features.module.modules.combat.ModuleAutoRod
@@ -90,6 +91,7 @@ import net.ccbluex.liquidbounce.features.module.modules.`fun`.ModuleSkinDerp
 import net.ccbluex.liquidbounce.features.module.modules.`fun`.ModuleTwerk
 import net.ccbluex.liquidbounce.features.module.modules.`fun`.ModuleVomit
 import net.ccbluex.liquidbounce.features.module.modules.`fun`.notebot.ModuleNotebot
+import net.ccbluex.liquidbounce.features.module.modules.misc.ModuleAIChat
 import net.ccbluex.liquidbounce.features.module.modules.misc.ModuleAntiCheatDetect
 import net.ccbluex.liquidbounce.features.module.modules.misc.ModuleAntiStaff
 import net.ccbluex.liquidbounce.features.module.modules.misc.ModuleAutoAccount
@@ -460,6 +462,7 @@ object ModuleManager : EventListener, Collection<ClientModule> by modules {
             // Combat
             ModuleAimbot,
             ModuleAutoArmor,
+            ModuleAutoL,
             ModuleAutoBow,
             ModuleAutoClicker,
             AutoMobHeal,
@@ -532,6 +535,7 @@ object ModuleManager : EventListener, Collection<ClientModule> by modules {
             ModuleBetterChat,
             ModuleElytraTarget,
             ModuleMacros,
+            ModuleAIChat,
             ModuleMiddleClickAction,
             ModuleInventoryTracker,
             ModuleNameProtect,
