@@ -190,80 +190,113 @@
 {/if}
 
 <style lang="scss">
-
-  .pair {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    column-gap: 24px;
-  }
-
-  .status {
-    display: flex;
-    flex-direction: column;
-    margin-bottom: 6px;
-    row-gap: 6px;
-    column-gap: 20px;
-  }
-
-  //半透明物品栏
-  .hotbar-elements {
-    background: rgba(255, 255, 255, 0.35);
-    backdrop-filter: blur(var(--hud-panel-blur, 0px));
-    -webkit-backdrop-filter: blur(var(--hud-panel-blur, 0px));
-    box-shadow: 0 8px 20px rgba(25, 35, 55, var(--hud-panel-shadow-alpha, 0.12));
-    position: relative;
-    border-radius: 12px;
-    overflow: hidden;
-
-    .slider {
-      border: solid 2px var(--accent-color);
-      height: 45px;
-      width: 45px;
-      position: absolute;
-      border-radius: 12px;
+    .pair {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        column-gap: 24px;
     }
 
-    .slots {
-      display: flex;
+    .status {
+        display: flex;
+        flex-direction: column;
+        margin-bottom: 6px;
+        row-gap: 6px;
+        column-gap: 20px;
     }
 
-    .slot {
-      height: 45px;
-      width: 45px;
+    /* 半透明物品栏 - 改为玻璃背景 */
+    .hotbar-elements {
+        background: transparent !important;
+        backdrop-filter: blur(16px) saturate(1.4) !important;
+        -webkit-backdrop-filter: blur(16px) saturate(1.4) !important;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        animation: glassPulse 4s ease-in-out infinite;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15) !important;
+        position: relative;
+        border-radius: 12px;
+        overflow: hidden;
+        transition: box-shadow 0.3s;
     }
-  }
 
-  .offhand-slot {
-    height: 45px;
-    width: 45px;
-    border-radius: 12px;
-    background-color: var(--hud-panel-soft-background, rgba(255, 255, 255, 0.35));
-    position: absolute;
-    bottom: 0;
-    left: -64px;
-  }
+    .hotbar-elements:hover {
+        box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25) !important;
+    }
 
-  .item-name {
-    color: var(--hotbar-text-color);
-    margin: 0 auto 20px;
-    font-weight: 500;
+    @keyframes glassPulse {
+        0%, 100% {
+            backdrop-filter: blur(16px) saturate(1.4);
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+            border-color: rgba(255, 255, 255, 0.08);
+        }
+        50% {
+            backdrop-filter: blur(20px) saturate(1.6);
+            box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+    }
 
-    background: rgba(255, 255, 255, 0.35);
-    backdrop-filter: blur(var(--hud-panel-blur, 0px));
-    -webkit-backdrop-filter: blur(var(--hud-panel-blur, 0px));
+    .hotbar-elements .slider {
+        border: solid 2px var(--accent-color);
+        height: 45px;
+        width: 45px;
+        position: absolute;
+        border-radius: 12px;
+    }
 
-    box-shadow: 0 8px 20px rgba(25, 35, 55, var(--hud-panel-shadow-alpha, 0.12));
-    padding: 6px 8px;
-    border-radius: 10px;
-    width: max-content;
+    .hotbar-elements .slots {
+        display: flex;
+    }
 
-    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.55);
-  }
+    .hotbar-elements .slot {
+        height: 45px;
+        width: 45px;
+    }
 
-  .overlay-message {
-    text-align: center;
-    color: var(--hotbar-text-color);
-    margin-bottom: 20px;
-    overflow: hidden;
-  }
+    .offhand-slot {
+        height: 45px;
+        width: 45px;
+        border-radius: 12px;
+        background: transparent !important;
+        backdrop-filter: blur(16px) saturate(1.4) !important;
+        -webkit-backdrop-filter: blur(16px) saturate(1.4) !important;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        animation: glassPulse 4s ease-in-out infinite;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15) !important;
+        position: absolute;
+        bottom: 0;
+        left: -64px;
+        transition: box-shadow 0.3s;
+    }
+
+    .offhand-slot:hover {
+        box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25) !important;
+    }
+
+    .item-name {
+        color: var(--hotbar-text-color);
+        margin: 0 auto 20px;
+        font-weight: 500;
+        background: transparent !important;
+        backdrop-filter: blur(16px) saturate(1.4) !important;
+        -webkit-backdrop-filter: blur(16px) saturate(1.4) !important;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        animation: glassPulse 4s ease-in-out infinite;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15) !important;
+        padding: 6px 8px;
+        border-radius: 10px;
+        width: max-content;
+        text-shadow: 0 1px 4px rgba(0, 0, 0, 0.55);
+        transition: box-shadow 0.3s;
+    }
+
+    .item-name:hover {
+        box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25) !important;
+    }
+
+    .overlay-message {
+        text-align: center;
+        color: var(--hotbar-text-color);
+        margin-bottom: 20px;
+        overflow: hidden;
+    }
 </style>

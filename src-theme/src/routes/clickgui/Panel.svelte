@@ -94,7 +94,7 @@
         offsetX = e.clientX * (2 / $scaleFactor) - panelConfig.left;
         offsetY = e.clientY * (2 / $scaleFactor) - panelConfig.top;
         panelConfig.zIndex = ++$maxPanelZIndex;
-        
+
         $showGrid = $snappingEnabled && !expandButtonElement.contains(e.target as HTMLElement);
     }
 

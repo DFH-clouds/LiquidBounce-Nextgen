@@ -39,32 +39,52 @@
 {/if}
 
 <style lang="scss">
-  .scoreboard {
-    width: max-content;
-    border-radius: 8px;
-    overflow: hidden;
-    font-size: 14px;
-    background: rgba(255, 255, 255, 0.18) !important;
-    backdrop-filter: blur(12px) !important;
-    -webkit-backdrop-filter: blur(12px) !important;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
-  }
+    .scoreboard {
+        width: max-content;
+        border-radius: 8px;
+        overflow: hidden;
+        font-size: 14px;
+        background: transparent !important;
+        backdrop-filter: blur(8px) saturate(1.2) !important;
+        -webkit-backdrop-filter: blur(8px) saturate(1.2) !important;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        animation: glassPulse 4s ease-in-out infinite;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15) !important;
+        transition: box-shadow 0.3s;
+    }
 
-  .entries {
-    background-color: transparent !important;
-    padding: 8px 10px;
-  }
+    .scoreboard:hover {
+        box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25) !important;
+    }
 
-  .row {
-    display: flex;
-    column-gap: 15px;
-    justify-content: space-between;
-  }
+    @keyframes glassPulse {
+        0%, 100% {
+            backdrop-filter: blur(8px) saturate(1.2);
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+            border-color: rgba(255, 255, 255, 0.08);
+        }
+        50% {
+            backdrop-filter: blur(12px) saturate(1.3);
+            box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+    }
 
-  .header {
-    text-align: center;
-    background-color: transparent !important;
-    padding: 5px 10px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  }
+    .entries {
+        background-color: transparent !important;
+        padding: 8px 10px;
+    }
+
+    .row {
+        display: flex;
+        column-gap: 15px;
+        justify-content: space-between;
+    }
+
+    .header {
+        text-align: center;
+        background-color: transparent !important;
+        padding: 5px 10px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
 </style>
