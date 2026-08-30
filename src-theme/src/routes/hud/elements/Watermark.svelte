@@ -1,12 +1,10 @@
 <script lang="ts">
     import { onDestroy, onMount } from "svelte";
-    import LiquidBounceLogo from "../../../components/LiquidBounceLogo.svelte";
     import { getClientInfo, getSession, getPlayerData } from "../../../integration/rest";
     import { listen } from "../../../integration/ws";
     import type { ClientInfo, ClientPlayerDataEvent, ModuleToggleEvent } from "../../../integration/events";
     import type { PlayerData, Session } from "../../../integration/types";
 
-    // 配置
     export let settings: {
         username?: string;
         textColor?: string;
@@ -15,124 +13,109 @@
         fontFamily?: string;
         fontSize?: number;
         showLogo?: boolean;
-    } = {};
+    } = {
+        fontFamily: 'Minecraft, sans-serif',
+        fontSize: 16
+    };
 
     let clientInfo: ClientInfo | null = null;
     let session: Session | null = null;
     let playerData: PlayerData | null = null;
-    let showUsername = true;
-
     let fps = 0;
     let clientInfoInterval: number | null = null;
+    const DISPLAY_NAME = "Exhibition";
 
-    async function updateSession() {
-        session = await getSession();
-    }
+    $: serverIp = clientInfo?.serverIp ?? "N/A";
+    $: ping = clientInfo?.ping ?? 0;
 
-    async function updatePlayerData() {
-        playerData = await getPlayerData();
-    }
-
-    async function updateClientInfo() {
-        clientInfo = await getClientInfo();
-        fps = clientInfo?.fps ?? 0;
-    }
-
-    $: playerName = session?.username ?? playerData?.username ?? settings.username ?? "Player";
-    $: displayName = showUsername ? playerName : "Protected";
-
-    //时间
     let currentTime = "";
     let timeInterval: number | null = null;
+
+    let isFontReady = false;
 
     function updateTime() {
         const now = new Date();
         currentTime = now.toLocaleTimeString("en-US", {
-            hour: "2-digit",
-            minute: "2-digit",
-            second: "2-digit"
+            hour: "2-digit", minute: "2-digit", hour12: true,
         });
     }
 
-    onMount(() => {
-        updateSession();
-        updatePlayerData();
-        updateClientInfo();
+    async function updateSession() { session = await getSession(); }
+    async function updatePlayerData() { playerData = await getPlayerData(); }
+    async function updateClientInfo() { clientInfo = await getClientInfo(); fps = clientInfo?.fps ?? 0; }
 
+    onMount(async () => {
+        try {
+            await document.fonts.ready;
+            await document.fonts.load("16px Minecraft");
+            isFontReady = true;
+        } catch (e) {
+            console.error("字体加载失败，显示备用字体", e);
+            isFontReady = true;
+        }
+
+        await updateSession();
+        await updatePlayerData();
+        await updateClientInfo();
         updateTime();
+
         timeInterval = setInterval(updateTime, 1000);
-        clientInfoInterval = setInterval(updateClientInfo, 1000); // 每秒更新 FPS
+        clientInfoInterval = setInterval(updateClientInfo, 1000);
 
         const unsubSession = listen("session", updateSession);
-        const unsubPlayer = listen("clientPlayerData", (e: ClientPlayerDataEvent) => {
-            playerData = e.playerData;
-        });
-        const unsubModule = listen("moduleToggle", (e: ModuleToggleEvent) => {
-            if (e.moduleName.toLowerCase() === "nameprotect") {
-                showUsername = !e.enabled;
-            }
-        });
+        const unsubPlayer = listen("clientPlayerData", (e: ClientPlayerDataEvent) => { playerData = e.playerData; });
+        const unsubModule = listen("moduleToggle", (e: ModuleToggleEvent) => {});
 
         onDestroy(() => {
             if (timeInterval) clearInterval(timeInterval);
             if (clientInfoInterval) clearInterval(clientInfoInterval);
-            unsubSession();
-            unsubPlayer();
-            unsubModule();
+            unsubSession(); unsubPlayer(); unsubModule();
         });
     });
-
-    $: html = `
-        <div class="watermark-onetap">
-            <span class="text">${displayName} | FPS: ${fps} | ${currentTime}</span>
-        </div>
-    `;
 </script>
 
-<div
-    class="watermark"
-    style="
-        --text-color: {settings.textColor ?? '#ffffff'};
-        --accent-color: {settings.accentColor ?? '#ff6b6b'};
-        --font-family: {settings.fontFamily ?? 'Inter, sans-serif'};
-        --font-size: {settings.fontSize ?? 16}px;
-    "
->
-    {#if settings.showLogo ?? true}
-        <div class="logo">
-            <LiquidBounceLogo width="120px" height="auto" badgeFill="var(--accent-color)" />
-        </div>
-    {/if}
-    <div class="content-wrapper">
-        {@html html}
-    </div>
+{#if isFontReady}
+<div class="exhibition-watermark" style="--accent-color: {settings.accentColor ?? '#ff6b6b'}; --font-family: {settings.fontFamily ?? 'Minecraft, sans-serif'}; --font-size: {settings.fontSize ?? 16}px;">
+    <span class="exhibition-wrapper">
+        <span class="name-container">
+            {DISPLAY_NAME}
+            <span class="name-accent">{DISPLAY_NAME.charAt(0)}</span>
+        </span>
+        <span class="info-part">
+            <span style="color: var(--accent-color);"> </span>
+            <span style="color: #808080;">[</span><span style="color: #ffffff;">1.8.x</span><span style="color: #808080;">]</span>
+            <span style="color: #808080;">[</span><span style="color: #ffffff;">{currentTime}</span><span style="color: #808080;">]</span>
+            <span style="color: #808080;">[</span><span style="color: #ffffff;">{fps} FPS</span><span style="color: #808080;">]</span>
+            <span style="color: #808080;">[</span><span style="color: #ffffff;">{serverIp}</span><span style="color: #808080;">]</span>
+        </span>
+    </span>
 </div>
+{/if}
 
 <style lang="scss">
+    @font-face {
+        font-family: 'Minecraft';
+        src: url('/fonts/Minecraft.ttf') format('truetype');
+        font-display: block;
+        font-weight: normal;
+        font-style: normal;
+    }
 
-    .watermark {
+    .exhibition-watermark {
         display: flex;
         align-items: center;
-        gap: 12px;
         width: max-content;
+        text-shadow: 1px 1px 0 rgba(0, 0, 0, 1);
+        font-family: var(--font-family);
+        font-size: var(--font-size);
+        letter-spacing: 1px;
+        -webkit-font-smoothing: none;
+        -moz-osx-font-smoothing: unset;
+        font-smooth: never;
+        image-rendering: pixelated;
     }
-
-    .logo { flex-shrink: 0; }
-    .content-wrapper { display: flex; align-items: center; }
-
-    :global(.watermark-onetap) {
-        background: rgba(255, 255, 255, 0.18) !important;
-        backdrop-filter: blur(12px) !important;
-        -webkit-backdrop-filter: blur(12px) !important;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
-        padding: 8px 12px;
-        border-radius: 8px;
-        display: inline-flex;
-        align-items: center;
-        font-weight: 500;
-    }
-
-    :global(.watermark-onetap .text) {
-        white-space: nowrap;
-    }
+    .exhibition-wrapper { display: flex; align-items: center; white-space: nowrap; gap: 0; }
+    .name-container { position: relative; display: inline-block; color: #ffffff; }
+    .name-accent { position: absolute; left: 0; top: 0; color: var(--accent-color); pointer-events: none; }
+    .info-part { display: inline-block; color: var(--accent-color); }
 </style>
