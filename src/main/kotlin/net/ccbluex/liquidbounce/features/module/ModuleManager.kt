@@ -18,6 +18,7 @@
  */
 package net.ccbluex.liquidbounce.features.module
 
+import net.ccbluex.liquidbounce.features.module.modules.`fun`.ModuleLP
 import it.unimi.dsi.fastutil.objects.ObjectRBTreeSet
 import it.unimi.dsi.fastutil.objects.Reference2ObjectArrayMap
 import net.ccbluex.fastutil.mapToArray
@@ -87,6 +88,7 @@ import net.ccbluex.liquidbounce.features.module.modules.exploit.servercrasher.Mo
 import net.ccbluex.liquidbounce.features.module.modules.`fun`.ModuleDankBobbing
 import net.ccbluex.liquidbounce.features.module.modules.`fun`.ModuleDerp
 import net.ccbluex.liquidbounce.features.module.modules.`fun`.ModuleHandDerp
+import net.ccbluex.liquidbounce.features.module.modules.`fun`.ModulePlayerStatusDetector
 import net.ccbluex.liquidbounce.features.module.modules.`fun`.ModuleSkinDerp
 import net.ccbluex.liquidbounce.features.module.modules.`fun`.ModuleTwerk
 import net.ccbluex.liquidbounce.features.module.modules.`fun`.ModuleVomit
@@ -520,6 +522,8 @@ object ModuleManager : EventListener, Collection<ClientModule> by modules {
             ModuleDankBobbing,
             ModuleDerp,
             ModuleNotebot,
+            ModulePlayerStatusDetector,
+            ModuleLP,
             ModuleSkinDerp,
             ModuleHandDerp,
             ModuleTwerk,
