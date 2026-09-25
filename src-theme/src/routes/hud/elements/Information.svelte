@@ -1178,7 +1178,7 @@
                 <div class="scaffold-text-wrapper">
                     <div class="scaffold-main-info">
                         <span class="scaffold-count" style="color: {scaffoldBlockColor}; text-shadow: 0 0 8px color-mix(in srgb, {scaffoldBlockColor} 60%, transparent);">{scaffoldShownCount}</span>
-                        <span class="scaffold-label">blocks</span>
+                        <span class="scaffold-label">Blocks</span>
                     </div>
                 </div>
             </div>

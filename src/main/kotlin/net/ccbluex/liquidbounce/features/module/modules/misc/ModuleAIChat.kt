@@ -44,6 +44,7 @@ import java.util.concurrent.TimeUnit
  */
 
 //新用户注册智谱账号免费送Token 智谱网站：https://open.bigmodel.cn/apikey/platform
+// FIX 修复了用户调用对话每次对话都是新对话的BUG 26/9/25
 object ModuleAIChat : ClientModule("AIChat", ModuleCategories.MISC) {
 
     val apiKey by text("APIKey", "")
@@ -124,7 +125,8 @@ object ModuleAIChat : ClientModule("AIChat", ModuleCategories.MISC) {
                 val response = if (isManagerMode) {
                     handleModuleManagerRequest(userInput)
                 } else {
-                    callGLMAPI(userInput, false)
+                    // addToHistory 使用默认值 true，保留上下文
+                    callGLMAPI(userInput)
                 }
                 mc.execute {
                     displayAIResponse(response)
@@ -183,9 +185,9 @@ object ModuleAIChat : ClientModule("AIChat", ModuleCategories.MISC) {
             val toolCalls = messageObj.getAsJsonArray("tool_calls")
 
             return@use if (toolCalls != null && toolCalls.size() > 0) {
-                // 执行工具调用
+                // 工具调用
                 val results = executeToolCalls(toolCalls)
-                // 将结果返回给 AI 进行总结
+                // 总结
                 val followUpMessages = JsonArray()
                 followUpMessages.add(buildMessage("system", moduleManagerSystemPrompt))
                 followUpMessages.add(buildMessage("user", userInput))
@@ -494,11 +496,16 @@ object ModuleAIChat : ClientModule("AIChat", ModuleCategories.MISC) {
     // 调用智谱 glm模型的api实现
 
     private suspend fun callGLMAPI(userMessage: String, addToHistory: Boolean = true): String = withContext(Dispatchers.IO) {
-        val messages = mutableListOf(
-            Message("system", systemPrompt),
-            Message("user", userMessage)
-        )
-        conversationHistory.takeLast(maxHistory - 2).forEach { messages.add(it) }
+        // 构建消息列表：system + 历史 + 当前用户消息
+        val messages = mutableListOf<Message>()
+        messages.add(Message("system", systemPrompt))
+
+        // 添加最近的历史记录（预留 2 条给当前用户消息和 AI 回复）
+        val history = conversationHistory.takeLast(maxHistory - 2)
+        messages.addAll(history)
+
+        // 添加当前用户消息
+        messages.add(Message("user", userMessage))
 
         val requestBody = JsonObject().apply {
             addProperty("model", model)
@@ -531,9 +538,13 @@ object ModuleAIChat : ClientModule("AIChat", ModuleCategories.MISC) {
                 .get("content").asString
 
             if (addToHistory) {
+                // 保存本轮对话
                 conversationHistory.add(Message("user", userMessage))
                 conversationHistory.add(Message("assistant", content))
-                while (conversationHistory.size > maxHistory) conversationHistory.removeAt(0)
+                // 修剪历史，保持不超过 maxHistory
+                while (conversationHistory.size > maxHistory) {
+                    conversationHistory.removeAt(0)
+                }
             }
 
             content
