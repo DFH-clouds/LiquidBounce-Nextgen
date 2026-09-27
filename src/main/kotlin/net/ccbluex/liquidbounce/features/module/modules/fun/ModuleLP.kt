@@ -8,7 +8,7 @@ import net.minecraft.client.gui.screens.Screen
 import net.minecraft.client.input.KeyEvent
 import net.minecraft.network.chat.Component
 import org.lwjgl.glfw.GLFW
-
+//一个仿windows蓝屏故障的娱乐模块
 object ModuleLP : ClientModule("LP", ModuleCategories.FUN), EventListener {
 
     private var previousScreen: Screen? = null

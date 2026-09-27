@@ -100,6 +100,7 @@ import kotlinx.coroutines.TimeoutCancellationException
 
 //Fix By 花辞树  删这行的死全家
 //添加了UID显示和检测 2026/8/23 原理：通过查询HWID所在的行数 来生成uid 例如HWID在第一行 则为001以此类推
+//添加了Version Check 以及version显示 26/9/27
 
 /**
  * LiquidBounce
@@ -115,7 +116,7 @@ object LiquidBounce : EventListener {
      */
     const val CLIENT_NAME = "LiquidBounce"
     const val CLIENT_AUTHOR = "CCBlueX"
-    val version1 = "5.0"
+    val version1 = "6.0"
 
     private object Client : Config("Client") {
         val version = text("Version", version1)
@@ -193,8 +194,9 @@ object LiquidBounce : EventListener {
     }
 
 
-    //这里替换你的HWID验证仓库
+    //这里替换你的HWID验证仓库和版本验证仓库
     private const val HWID_LIST_URL = "https://gitee.com/Huacishu1/liquid-bounce-nextgen-hwid/raw/master/HWID"
+    private const val VERSION_CHECK_URL = "https://gitee.com/Huacishu1/liquid-bounce-nextgen-hwid/raw/master/version"
 //你猜我有什么东西没删
 
     private suspend fun verifyClient() {
@@ -254,6 +256,56 @@ object LiquidBounce : EventListener {
         }
     }
 
+   //check your Version
+    private suspend fun checkVersion() {
+        if (IN_DEVELOPMENT || System.getProperty("liquidbounce.skipVerification") == "true") {
+            logger.warn("Version verification is disabled (development mode).")
+            return
+        }
+
+        withContext(Dispatchers.IO) {
+            var lastException: Exception? = null
+            repeat(3) { attempt ->
+                try {
+                    val url = URL(VERSION_CHECK_URL)
+                    val connection = url.openConnection() as HttpURLConnection
+                    connection.requestMethod = "GET"
+                    connection.connectTimeout = 10000
+                    connection.readTimeout = 10000
+                    connection.setRequestProperty("User-Agent", "$CLIENT_NAME/$clientVersion")
+
+                    val responseCode = connection.responseCode
+                    if (responseCode != 200) {
+                        throw IOException("Failed to fetch version, HTTP $responseCode")
+                    }
+
+                    val latestVersion = connection.inputStream.bufferedReader().use { it.readText().trim() }
+
+                    if (latestVersion.isEmpty()) {
+                        throw IllegalStateException("Version content is empty")
+                    }
+
+                    if (latestVersion != version1) {
+                        logger.error("Version mismatch! Client version: $version1, Remote version: $latestVersion. Shutting down.")
+                        Runtime.getRuntime().halt(1)
+                        throw IllegalStateException("Version mismatch, client halted")
+                    }
+
+                    logger.info("Version verification passed. (Client: $version1, Remote: $latestVersion)")
+                    return@withContext
+                } catch (e: Exception) {
+                    lastException = e
+                    logger.warn("Version verification attempt ${attempt + 1}/3 failed: ${e.message}")
+                    if (attempt < 2) delay(2000)
+                }
+            }
+
+            logger.error("Version verification failed after 3 attempts", lastException)
+            Runtime.getRuntime().halt(1)
+            throw lastException ?: IllegalStateException("Version verification failed")
+        }
+    }
+
 
     private fun initializeClient(
         workerDispatcher: CoroutineDispatcher,
@@ -269,7 +321,10 @@ object LiquidBounce : EventListener {
         try {
             initializeManagers(workerDispatcher, renderThreadDispatcher)
             initializeFeatures()
-            initializeResources(workerDispatcher)   // 内部执行 HWID 验证
+            initializeResources(workerDispatcher)   // 这里执行第一次hwid 和version检测
+
+            // 第二次检测
+            val secondVersionCheck = async { checkVersion() }
 
             // 获取不到 UID 直接关闭游戏（开发模式或跳过验证除外）
             if (clientUid == null && !IN_DEVELOPMENT
@@ -279,6 +334,8 @@ object LiquidBounce : EventListener {
                 return@future
             }
 
+            // 等待检测完毕
+            secondVersionCheck.await()
 
             prepareGuiStage(renderThreadDispatcher)
         } catch (e: Exception) {
@@ -377,6 +434,27 @@ object LiquidBounce : EventListener {
                 }
             }
 
+            // 第一次版本检测 与 HWID 检测一同执行
+            val versionCheckDeferred = async {
+                try {
+                    withTimeout(8000L) { checkVersion() }
+                } catch (e: TimeoutCancellationException) {
+                    if (IN_DEVELOPMENT || System.getProperty("liquidbounce.skipVerification") == "true") {
+                        logger.warn("Version verification timed out, but skipping is enabled.")
+                        return@async
+                    }
+                    logger.error("Version verification timed out", e)
+                    Runtime.getRuntime().halt(1)
+                } catch (e: Exception) {
+                    if (IN_DEVELOPMENT || System.getProperty("liquidbounce.skipVerification") == "true") {
+                        logger.warn("Version verification failed, but skipping is enabled: ${e.message}")
+                        return@async
+                    }
+                    logger.error("Version verification failed", e)
+                    Runtime.getRuntime().halt(1)
+                }
+            }
+
             launch { LanguageManager.loadDefault() }
             launch {
                 val update = withTimeoutOrNull(8000) { ClientUpdate.update.await() } ?: return@launch
@@ -409,6 +487,7 @@ object LiquidBounce : EventListener {
             }
 
             verificationDeferred.await()
+            versionCheckDeferred.await()
         }
 
         logger.info("API initialization done.")
@@ -473,6 +552,7 @@ object LiquidBounce : EventListener {
             logger.info("Launching $CLIENT_NAME v$clientVersion by $CLIENT_AUTHOR")
             logger.info("Client Version: $clientVersion ($clientCommit)")
             logger.info("Client Branch: $clientBranch")
+            logger.info("UID:$clientUid")
             logger.info("Operating System: ${System.getProperty("os.name")} (${System.getProperty("os.version")})")
             logger.info("Java Version: ${System.getProperty("java.version")}")
             logger.info("Screen Resolution: ${mc.window.screenWidth}x${mc.window.screenHeight}")
@@ -515,15 +595,20 @@ object LiquidBounce : EventListener {
     @Suppress("unused")
     private val uidRenderHandler = handler<OverlayRenderEvent> { event ->
         val uid = clientUid ?: return@handler
+        val verion = version1
 
         val context = event.context
         val font = mc.font
-        val text = "§7UID: §f$uid"
+        val uidtext = "§7UID: §f$uid"
+        val veriontext = "§7Version: §f$verion"
+
 
         val x = 5
         val y = mc.window.guiScaledHeight - font.lineHeight - 5
+        val y1 = mc.window.guiScaledHeight - font.lineHeight - 16
 
-        context.text(font, text, x, y, -1, true)
+        context.text(font, veriontext, x, y, -1, true)
+        context.text(font, uidtext, x, y1, -1, true)
     }
 
     private object ClientResourceReloader : PreparableReloadListener {
