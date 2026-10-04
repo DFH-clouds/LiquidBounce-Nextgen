@@ -116,7 +116,7 @@ object LiquidBounce : EventListener {
      */
     const val CLIENT_NAME = "LiquidBounce"
     const val CLIENT_AUTHOR = "CCBlueX"
-    val version1 = "6.0"
+    val version1 = "7.0"
 
     private object Client : Config("Client") {
         val version = text("Version", version1)
@@ -142,6 +142,7 @@ object LiquidBounce : EventListener {
     val clientVersion by Client.version
     val clientCommit get() = commit
     val clientBranch by Client.branch
+    val clientuid get() = clientUid
 
     const val IN_DEVELOPMENT = false
 
@@ -552,7 +553,7 @@ object LiquidBounce : EventListener {
             logger.info("Launching $CLIENT_NAME v$clientVersion by $CLIENT_AUTHOR")
             logger.info("Client Version: $clientVersion ($clientCommit)")
             logger.info("Client Branch: $clientBranch")
-            logger.info("UID:$clientUid")
+            logger.info("UID:$clientuid")
             logger.info("Operating System: ${System.getProperty("os.name")} (${System.getProperty("os.version")})")
             logger.info("Java Version: ${System.getProperty("java.version")}")
             logger.info("Screen Resolution: ${mc.window.screenWidth}x${mc.window.screenHeight}")
