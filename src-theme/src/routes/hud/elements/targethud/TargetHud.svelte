@@ -1,20 +1,17 @@
 <script lang="ts">
-    import { fly } from 'svelte/transition';
-    import { listen } from '../../../../integration/ws.js';
-    import type { PlayerData } from '../../../../integration/types';
-    import { REST_BASE } from '../../../../integration/host';
-    import HealthProgress from './HealthProgress.svelte';
-    import ArmorStatus from './ArmorStatus.svelte';
-    import type { TargetChangeEvent } from '../../../../integration/events';
-
- //灵感来于Miyabi-Client
-    // 模式
-    export let mode: 'simple' | 'xylitol' | 'moon' | 'exire' | 'new' | 'exhibition' | 'tenacity' | 'akrien' | 'raven' | 'naven' | 'southside' = 'exire';
+    import { listen } from "../../../../integration/ws";
+    import { itemTextureUrl } from "../../../../integration/rest";
+    import type {
+        TargetChangeEvent,
+        ClientPlayerDataEvent
+    } from "../../../../integration/events";
+    import type { PlayerData, ItemStack, TextComponent, Vec3 } from "../../../../integration/types";
 
     let target: PlayerData | null = null;
-    let visible = true;
-    let hideTimeout: number;
+    let localPos: Vec3 | null = null;
 
+    let visible = true;
+    let hideTimeout: ReturnType<typeof setTimeout>;
 
     function startHideTimeout() {
         hideTimeout = setTimeout(() => {
@@ -22,407 +19,459 @@
         }, 1000);
     }
 
-    listen('targetChange', (data: TargetChangeEvent) => {
+    listen("targetChange", (data: TargetChangeEvent) => {
         target = data.target;
         visible = true;
         clearTimeout(hideTimeout);
         startHideTimeout();
     });
 
+    listen("clientPlayerData", (event: ClientPlayerDataEvent) => {
+        localPos = event.playerData.position;
+    });
+
     startHideTimeout();
 
-    // ---------- 辅助计算 ----------
-    $: health = target?.actualHealth ?? 0;
-    $: maxHealth = target?.maxHealth ?? 20;
-    $: absorption = target?.absorption ?? 0;
-    $: armor = target?.armor ?? 0;
-    $: totalHealth = health + absorption;
-    $: maxTotal = maxHealth + absorption;
-    $: healthPercent = maxTotal > 0 ? Math.min(totalHealth / maxTotal, 1) : 0;
-    $: armorPercent = Math.min(armor / 20, 1);
-    $: distance = target?.distance ?? 0;
-    $: blockRate = target?.blockRate ?? 0;
-    $: gappleCount = target?.gappleCount ?? 0;
-    $: avatarUrl = target ? `${REST_BASE}/api/v1/client/resource/skin?uuid=${target.uuid}` : '';
+    $: distance = computeDistance(target, localPos);
+    $: healthPct = target ? healthPercent(target.health, target.maxHealth) : 0;
+    $: isDanger = healthPct <= 25;
 
+    function computeDistance(t: PlayerData | null, local: Vec3 | null): number | null {
+        if (!t || !local) return null;
+        const dx = t.position.x - local.x;
+        const dy = t.position.y - local.y;
+        const dz = t.position.z - local.z;
+        return Math.sqrt(dx * dx + dy * dy + dz * dz);
+    }
 
-    function getHealthColor(health: number, maxHealth: number): string {
-        const ratio = Math.min(health / maxHealth, 1);
-        const r = Math.round(255 * (1 - ratio));
-        const g = Math.round(255 * ratio);
-        return `rgb(${r}, ${g}, 0)`;
+    function formatHealth(hp: number): string {
+        return Math.max(0, Math.round(hp)).toString();
+    }
+
+    function healthPercent(hp: number, maxHp: number): number {
+        if (maxHp <= 0) return 0;
+        return Math.max(0, Math.min(100, (hp / maxHp) * 100));
+    }
+
+    function hasItem(stack: ItemStack | undefined | null): boolean {
+        return !!stack && stack.count > 0;
+    }
+
+    function textOf(component: TextComponent | string | undefined | null): string {
+        if (!component) return "";
+        if (typeof component === "string") return component;
+        let result = component.text ?? "";
+        if (component.extra) {
+            for (const child of component.extra) {
+                result += textOf(child);
+            }
+        }
+        return result;
+    }
+
+    function itemTexture(stack: ItemStack | null | undefined): string | null {
+        if (!stack || stack.count <= 0) return null;
+        return itemTextureUrl(stack.identifier);
+    }
+
+    const ARMOR_SLOTS = ["头盔", "胸甲", "护腿", "靴子"] as const;
+
+    function armorStack(index: number): ItemStack | null {
+        if (!target?.armorItems || index >= target.armorItems.length) return null;
+        const stack = target.armorItems[index];
+        return hasItem(stack) ? stack : null;
     }
 </script>
 
 {#if visible && target}
-    <div class="targethud mode-{mode}" transition:fly={{ y: -10, duration: 200 }}>
-        {#if mode === 'xylitol'}
-            <!-- ========== Xylitol 模式 ========== -->
-            <div class="xylitol">
-                <div class="avatar" style="background-image: url('{avatarUrl}');"></div>
-                <div class="info">
-                    <div class="name"><span class="label">name: </span>{target.username}</div>
-                    <div class="health"><span class="label">health: </span>{health.toFixed(1)}hp</div>
-                </div>
-                <div class="bar" style="width: {healthPercent * 100}%; background: linear-gradient(to right, var(--color-1), var(--color-6));"></div>
-            </div>
+    <div
+        class="target-hud"
+        class:danger={isDanger}
+    >
+        <div class="glow-layer"></div>
+        <div class="flow-layer"></div>
+        <div class="border-layer"></div>
 
-        {:else if mode === 'southside'}
-            <!-- ========== SouthSide========== -->
-            <div class="southside">
-                <div class="avatar" style="background-image: url('{avatarUrl}');"></div>
-                <div class="info">
-                    <div class="name">{target.username}</div>
-                    <div class="stats">Health: {health.toFixed(1)}  Block Rate: {(blockRate * 100).toFixed(0)}%</div>
-                </div>
-                {#if distance <= 3}
-                    <div class="proximity-indicator"></div>
+        <div class="target-header">
+            <span class="target-name">{target.username}</span>
+            <div class="target-meta">
+                {#if target.armor > 0}
+                    <span class="armor-value">🛡 {target.armor}</span>
                 {/if}
-                {#if gappleCount > 0}
-                    <div class="gapple">Gapple: {gappleCount}</div>
+                {#if distance !== null}
+                    <span class="distance-value">{distance.toFixed(1)}m</span>
                 {/if}
-                <div class="bar" style="width: {healthPercent * 100}%; background: white;"></div>
             </div>
+        </div>
 
-        {:else if mode === 'naven'}
-            <!-- ========== Naven ========== -->
-            <div class="naven">
-                <div class="avatar" style="background-image: url('{avatarUrl}');"></div>
-                <div class="info">
-                    <div class="name">{target.username}</div>
-                    <div class="stats">Health: {health.toFixed(1)}</div>
-                    <div class="stats">Distance: {distance.toFixed(1)} m</div>
-                    <div class="stats">
-                        {#if blockRate > 0}
-                            Blocking ({(blockRate * 100).toFixed(0)}%)
-                        {:else}
-                            Not Blocking
-                        {/if}
+        <div class="health-bar-container">
+            <div
+                class="health-bar-fill"
+                style:width="{healthPct}%"
+            >
+                <div class="health-bar-gradient"></div>
+            </div>
+            <span class="health-text">
+                {formatHealth(target.health)} / {formatHealth(target.maxHealth)}
+                {#if target.absorption > 0}
+                    <span class="absorption">+{formatHealth(target.absorption)}</span>
+                {/if}
+            </span>
+        </div>
+
+        <div class="gear-row">
+            {#each ARMOR_SLOTS as label, i}
+                {#if armorStack(i)}
+                    <div class="gear-slot" title="{label}: {textOf(armorStack(i)!.displayName)}">
+                        <img
+                            class="gear-icon"
+                            src={itemTexture(armorStack(i))!}
+                            alt={textOf(armorStack(i)!.displayName)}
+                        />
                     </div>
-                </div>
-                <div class="bar" style="width: {healthPercent * 100}%; background: #d20000;"></div>
-            </div>
+                {/if}
+            {/each}
 
-        {:else if mode === 'moon'}
-            <!-- ========== Moon  ========== -->
-            <div class="moon">
-                <div class="avatar" style="background-image: url('{avatarUrl}');"></div>
-                <div class="info">
-                    <div class="name">{target.username}</div>
-                    <div class="health">{Math.floor(health) + (health % 1 >= 0.5 ? 0.5 : 0)} HP</div>
-                    <div class="bar" style="width: {healthPercent * 100}%; background: var(--color-1);"></div>
+            {#if hasItem(target.mainHandStack)}
+                <div class="gear-slot main-hand" title="主手: {textOf(target.mainHandStack.displayName)}">
+                    <img class="gear-icon" src={itemTexture(target.mainHandStack)!} alt="" />
                 </div>
-            </div>
+            {/if}
 
-        {:else if mode === 'new'}
-            <!-- ========== New========== -->
-            <div class="new">
-                <div class="info">
-                    <div class="name">Name: {target.username}</div>
-                    <div class="health">Health: {health.toFixed(1)}/{maxHealth.toFixed(1)}</div>
+            {#if hasItem(target.offHandStack)}
+                <div class="gear-slot off-hand" title="副手: {textOf(target.offHandStack.displayName)}">
+                    <img class="gear-icon" src={itemTexture(target.offHandStack)!} alt="" />
                 </div>
-            </div>
-
-        {:else if mode === 'exhibition'}
-            <!-- ========== Exhibition ========== -->
-            <div class="exhibition">
-                <div class="avatar" style="background-image: url('{avatarUrl}');"></div>
-                <div class="info">
-                    <div class="name">{target.username}</div>
-                    <div class="health-bar">
-                        <div class="fill" style="width: {Math.max(50, healthPercent * 100)}%; background: {getHealthColor(health, maxHealth)};"></div>
-                        {#if absorption > 0}
-                            <div class="absorption" style="width: {absorption / maxTotal * 100}%; background: #897009;"></div>
-                        {/if}
-                    </div>
-                    <div class="stats">HP: {Math.floor(totalHealth)} | Dist: {Math.floor(distance)}</div>
-                </div>
-                <div class="armor">
-                    {#each target.armorItems as item, i}
-                        {#if item.count > 0}
-                            <ArmorStatus itemStack={item} />
-                        {/if}
-                    {/each}
-                </div>
-            </div>
-
-        {:else if mode === 'exire'}
-            <!-- ========== Exire ========== -->
-            <div class="exire">
-                <div class="avatar" style="background-image: url('{avatarUrl}');"></div>
-                <div class="info">
-                    <div class="name">{target.username}</div>
-                    <div class="bar" style="width: {healthPercent * 100}%; background: linear-gradient(to right, var(--color-1), var(--color-6));"></div>
-                </div>
-            </div>
-
-        {:else if mode === 'tenacity'}
-            <!-- ========== Tenacity========== -->
-            <div class="tenacity">
-                <div class="avatar" style="background-image: url('{avatarUrl}');"></div>
-                <div class="info">
-                    <div class="name">{target.username} {(blockRate * 100).toFixed(0)}%</div>
-                    <div class="bar">
-                        <div class="fill" style="width: {healthPercent * 100}%; background: linear-gradient(to right, var(--color-1), var(--color-6));"></div>
-                        <span class="percent">{(healthPercent * 100).toFixed(0)}%</span>
-                    </div>
-                </div>
-            </div>
-
-        {:else if mode === 'akrien'}
-            <!-- ========== Akrien ========== -->
-            <div class="akrien">
-                <div class="avatar" style="background-image: url('{avatarUrl}');"></div>
-                <div class="info">
-                    <div class="name">{target.username}</div>
-                    <div class="stats">Health: {health.toFixed(1)}</div>
-                    <div class="stats">Distance: {distance.toFixed(1)} m</div>
-                    <div class="bar health-bar" style="width: {healthPercent * 100}%; background: linear-gradient(to right, #009C41, #8EFFC1);"></div>
-                    <div class="bar armor-bar" style="width: {armorPercent * 100}%; background: linear-gradient(to right, #0067B0, #39D5FF);"></div>
-                </div>
-            </div>
-
-        {:else if mode === 'raven'}
-            <!-- ========== Raven========== -->
-            <div class="raven">
-                <div class="info">
-                    <div class="name" style="color: #f44336;">{target.username}</div>
-                    <div class="status">{health > (target?.maxHealth ?? 20) ? 'L' : 'W'}</div>
-                    <div class="health">{health.toFixed(1)}</div>
-                </div>
-                <div class="bar" style="width: {healthPercent * 100}%; background: linear-gradient(to right, var(--color-1), var(--color-16));"></div>
-            </div>
-
-        {:else if mode === 'simple'}
-            <!-- ========== Simple========== -->
-            <div class="simple">
-                <div class="avatar" style="background-image: url('{avatarUrl}');"></div>
-                <div class="info">
-                    <div class="name">{target.username}</div>
-                    <div class="stats">Distance: {distance.toFixed(2)}m</div>
-                    <div class="health">{health.toFixed(2)}</div>
-                </div>
-                <div class="bar" style="width: {healthPercent * 100}%; background: rgba(255,255,255,0.4);"></div>
-                <div class="accent" style="height: 8px; background: var(--color-1);"></div>
-            </div>
-
-        {/if}
+            {/if}
+        </div>
     </div>
 {/if}
 
 <style lang="scss">
-    :root {
-        --color-1: #ff4d4d;
-        --color-6: #ffaa00;
-        --color-16: #00aaff;
-        --targethud-background-color: rgba(0, 0, 0, 0.75);
-        --targethud-text-color: #ffffff;
-        --targethud-text-dimmed-color: #aaaaaa;
+    .target-hud {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        min-width: 200px;
+        padding: 12px 16px;
+        border-radius: 20px;
+
+        background: transparent !important;
+        backdrop-filter: blur(8px) saturate(1.2) !important;
+        -webkit-backdrop-filter: blur(8px) saturate(1.2) !important;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15) !important;
+
+        animation: glassPulse 4s ease-in-out infinite;
+        transition: box-shadow 0.3s, border-color 0.5s;
+        overflow: hidden;
+
+        --c-blue: 88, 204, 250;
+        --c-pink: 245, 150, 200;
+        --c-purple: 123, 44, 191;
     }
 
-    .targethud {
-        background-color: var(--targethud-background-color);
-        border-radius: 5px;
+    .target-hud:hover {
+        box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25) !important;
+    }
+
+    .target-hud.danger {
+        animation-duration: 1.6s;
+    }
+
+    @keyframes glassPulse {
+        0%, 100% {
+            backdrop-filter: blur(8px) saturate(1.2);
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15),
+                        0 0 0 0 rgba(var(--c-blue), 0);
+            border-color: rgba(255, 255, 255, 0.08);
+        }
+        50% {
+            backdrop-filter: blur(12px) saturate(1.3);
+            box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25),
+                        0 0 12px 1px rgba(var(--c-pink), 0.4);
+            border-color: rgba(var(--c-pink), 0.5);
+        }
+    }
+
+    .glow-layer {
+        position: absolute;
+        inset: -1px;
+        border-radius: 20px;
+        pointer-events: none;
+        z-index: -3;
+        background: conic-gradient(
+            from 0deg,
+            rgba(var(--c-blue), 0.22),
+            rgba(var(--c-pink), 0.22),
+            rgba(var(--c-purple), 0.22),
+            rgba(var(--c-blue), 0.22)
+        );
+        filter: blur(12px);
+        opacity: 0.7;
+        animation: glowRotate 6s linear infinite;
+        will-change: transform;
+    }
+
+    @keyframes glowRotate {
+        from { transform: rotate(0deg) scale(1.05); }
+        to   { transform: rotate(360deg) scale(1.05); }
+    }
+
+    .flow-layer {
+        position: absolute;
+        inset: 0;
+        border-radius: 20px;
+        pointer-events: none;
+        z-index: -2;
+
+        background: linear-gradient(
+            90deg,
+            rgba(var(--c-blue), 0.9) 0%,
+            rgba(var(--c-pink), 0.95) 25%,
+            rgba(var(--c-purple), 0.95) 50%,
+            rgba(var(--c-pink), 0.95) 75%,
+            rgba(var(--c-blue), 0.9) 100%
+        );
+        background-size: 300% 100%;
+
+        padding: 1.5px;
+        -webkit-mask:
+            linear-gradient(#fff 0 0) content-box,
+            linear-gradient(#fff 0 0);
+        -webkit-mask-composite: xor;
+                mask-composite: exclude;
+
+        opacity: 0.9;
+        animation:
+            flowMove 4s linear infinite,
+            flowGlow 3s ease-in-out infinite;
+        will-change: background-position, filter;
+    }
+
+    @keyframes flowMove {
+        0%   { background-position: 0% 50%; }
+        100% { background-position: 300% 50%; }
+    }
+
+    @keyframes flowGlow {
+        0%, 100% {
+            opacity: 0.75;
+            filter: drop-shadow(0 0 3px rgba(var(--c-pink), 0.45));
+        }
+        50% {
+            opacity: 1;
+            filter: drop-shadow(0 0 8px rgba(var(--c-pink), 0.85))
+                    drop-shadow(0 0 12px rgba(var(--c-purple), 0.6));
+        }
+    }
+
+    .border-layer {
+        position: absolute;
+        inset: 0;
+        border-radius: 20px;
+        pointer-events: none;
+        z-index: -1;
+
+        background: linear-gradient(
+            135deg,
+            rgba(var(--c-blue), 0.45) 0%,
+            rgba(var(--c-pink), 0.45) 50%,
+            rgba(var(--c-purple), 0.45) 100%
+        );
+        padding: 1px;
+        -webkit-mask:
+            linear-gradient(#fff 0 0) content-box,
+            linear-gradient(#fff 0 0);
+        -webkit-mask-composite: xor;
+                mask-composite: exclude;
+
+        box-shadow:
+            inset 0 0 16px rgba(var(--c-purple), 0.12),
+            0 0 10px rgba(var(--c-pink), 0.18);
+        transition: box-shadow 0.5s;
+    }
+
+    .target-header {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+    }
+
+    .target-name {
+        font-weight: 700;
+        font-size: 15px;
+        letter-spacing: 0.3px;
+        white-space: nowrap;
         overflow: hidden;
-        padding: 6px 10px;
-        min-width: 160px;
-        backdrop-filter: blur(4px);
-        display: inline-block;
+        text-overflow: ellipsis;
 
-        .avatar {
-            width: 32px;
-            height: 32px;
-            flex-shrink: 0;
-            image-rendering: pixelated;
-            background-size: cover;
-            background-position: center;
-            border-radius: 0;
-            background-color: #2a2a2a;
-            background-image: url('/img/steve.png');
-        }
+        background: linear-gradient(
+            90deg,
+            rgba(var(--c-blue), 1) 0%,
+            rgba(var(--c-pink), 1) 50%,
+            rgba(var(--c-purple), 1) 100%
+        );
+        background-size: 200% 100%;
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+        color: transparent;
 
-        .info {
-            flex: 1;
-            color: white;
-            .name { font-weight: 500; font-size: 16px; }
-            .stats { font-size: 12px; color: var(--targethud-text-dimmed-color); }
-        }
+        filter: drop-shadow(0 0 6px rgba(var(--c-pink), 0.35));
+        animation: nameFlow 3s linear infinite;
+    }
 
-        .bar {
-            height: 3px;
-            background: rgba(255,255,255,0.1);
-            border-radius: 0;
-            overflow: hidden;
-            transition: width 0.3s ease-out;
-        }
+    @keyframes nameFlow {
+        0%   { background-position: 0% 50%; }
+        100% { background-position: 200% 50%; }
+    }
 
-        &.mode-xylitol {
-            .xylitol {
-                display: flex;
-                align-items: center;
-                gap: 8px;
-                .info {
-                    .label { color: var(--color-6); }
-                }
-                .bar { height: 3px; background: linear-gradient(to right, var(--color-1), var(--color-6)); width: 0; }
-            }
-        }
+    .target-meta {
+        display: flex;
+        gap: 8px;
+        flex-shrink: 0;
+        font-family: monospace;
+        font-size: 11px;
+    }
 
-        &.mode-southside {
-            .southside {
-                position: relative;
-                display: flex;
-                align-items: center;
-                gap: 8px;
-                .info .stats { font-size: 11px; }
-                .proximity-indicator {
-                    position: absolute;
-                    left: -2px;
-                    top: 2px;
-                    bottom: 2px;
-                    width: 2px;
-                    background: white;
-                }
-                .gapple {
-                    background: rgba(0,0,0,0.5);
-                    padding: 0 6px;
-                    border-radius: 4px;
-                    font-size: 12px;
-                    color: white;
-                }
-                .bar { height: 2px; background: white; width: 0; margin-top: 2px; }
-            }
-        }
+    .armor-value {
+        color: rgba(var(--c-blue), 0.9);
+        opacity: 0.9;
+    }
 
-        &.mode-naven {
-            .naven {
-                display: flex;
-                gap: 10px;
-                .info .stats { font-size: 11px; line-height: 1.4; }
-                .bar { height: 3px; background: #d20000; width: 0; margin-top: 4px; }
-            }
-        }
+    .distance-value {
+        color: rgba(var(--c-pink), 0.9);
+        opacity: 0.9;
+    }
 
-        &.mode-moon {
-            .moon {
-                display: flex;
-                gap: 10px;
-                .info {
-                    .health { font-size: 13px; }
-                    .bar { height: 4px; background: var(--color-1); width: 0; margin-top: 4px; border-radius: 2px; }
-                }
-            }
-        }
+    .health-bar-container {
+        position: relative;
+        width: 100%;
+        height: 14px;
+        background: rgba(0, 0, 0, 0.35);
+        border-radius: 999px;
+        overflow: hidden;
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        box-shadow: inset 0 0 8px rgba(var(--c-purple), 0.18);
+    }
 
-        &.mode-new {
-            .new .info {
-                .name { font-size: 15px; }
-                .health { font-size: 14px; }
-            }
-        }
+    .health-bar-fill {
+        height: 100%;
+        border-radius: 999px;
+        position: relative;
+        overflow: hidden;
+        background: rgba(var(--c-blue), 1);
+        transition: width 0.25s ease-out;
+        contain: layout paint;
+    }
 
-        &.mode-exhibition {
-            .exhibition {
-                display: flex;
-                gap: 10px;
-                .info {
-                    .health-bar {
-                        position: relative;
-                        height: 4px;
-                        background: black;
-                        margin: 4px 0;
-                        .fill { height: 100%; background: green; }
-                        .absorption { position: absolute; right: 0; top: 0; height: 100%; background: #897009; }
-                    }
-                    .stats { font-size: 12px; }
-                }
-                .armor {
-                    display: flex;
-                    gap: 4px;
-                    align-items: center;
-                }
-            }
-        }
+    .health-bar-gradient {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 200%;
+        height: 100%;
+        background: linear-gradient(
+            90deg,
+            rgba(var(--c-blue), 1) 0%,
+            rgba(var(--c-pink), 1) 25%,
+            rgba(var(--c-purple), 1) 50%,
+            rgba(var(--c-pink), 1) 75%,
+            rgba(var(--c-blue), 1) 100%
+        );
+        animation: healthFlow 3s linear infinite;
+        will-change: transform;
+        transform: translate3d(0, 0, 0);
+    }
 
-        &.mode-exire {
-            .exire {
-                display: flex;
-                gap: 8px;
-                align-items: center;
-                .info {
-                    .name { font-size: 18px; }
-                    .bar { height: 4px; background: linear-gradient(to right, var(--color-1), var(--color-6)); width: 0; }
-                }
-            }
-        }
+    @keyframes healthFlow {
+        0%   { transform: translate3d(0, 0, 0); }
+        100% { transform: translate3d(-50%, 0, 0); }
+    }
 
-        &.mode-tenacity {
-            .tenacity {
-                display: flex;
-                gap: 10px;
-                .info {
-                    .bar {
-                        position: relative;
-                        height: 4px;
-                        background: rgba(0,0,0,0.3);
-                        .fill { height: 100%; background: linear-gradient(to right, var(--color-1), var(--color-6)); }
-                        .percent {
-                            position: absolute;
-                            right: 0;
-                            top: -12px;
-                            font-size: 10px;
-                            color: white;
-                        }
-                    }
-                }
-            }
-        }
+    .health-bar-fill::after {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(
+            90deg,
+            transparent 0%,
+            rgba(255, 255, 255, 0.35) 50%,
+            transparent 100%
+        );
+        animation: healthShine 2.5s ease-in-out infinite;
+        will-change: transform;
+        pointer-events: none;
+    }
 
-        &.mode-akrien {
-            .akrien {
-                display: flex;
-                gap: 10px;
-                .info {
-                    .stats { font-size: 11px; }
-                    .bar { height: 3px; margin-top: 2px; width: 0; }
-                    .health-bar { background: linear-gradient(to right, #009C41, #8EFFC1); }
-                    .armor-bar { background: linear-gradient(to right, #0067B0, #39D5FF); }
-                }
-            }
-        }
+    @keyframes healthShine {
+        0%   { transform: translate3d(-100%, 0, 0); }
+        100% { transform: translate3d(200%, 0, 0); }
+    }
 
-        &.mode-raven {
-            .raven {
-                display: flex;
-                align-items: center;
-                gap: 8px;
-                .info {
-                    display: flex;
-                    gap: 6px;
-                    align-items: center;
-                    .name { color: #f44336; }
-                    .status { font-weight: bold; }
-                    .health { color: var(--color-1); }
-                }
-                .bar { height: 4px; background: linear-gradient(to right, var(--color-1), var(--color-16)); width: 0; }
-            }
-        }
+    .health-text {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        font-family: monospace;
+        font-size: 10px;
+        font-weight: 700;
+        color: #fff;
+        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+        letter-spacing: 0.5px;
+    }
 
-        &.mode-simple {
-            .simple {
-                display: flex;
-                gap: 8px;
-                align-items: center;
-                .info {
-                    .stats { font-size: 11px; }
-                    .health { font-weight: bold; }
-                }
-                .bar { height: 100%; background: rgba(255,255,255,0.2); width: 0; position: absolute; left: 0; top: 0; }
-                .accent { position: absolute; left: 0; bottom: 0; width: 3px; background: var(--color-1); }
-                position: relative;
-                overflow: hidden;
-                padding: 4px 10px;
-            }
-        }
+    .absorption {
+        color: #ffcc44;
+        font-size: 9px;
+    }
+
+    .gear-row {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        padding-top: 2px;
+    }
+
+    .gear-slot {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 24px;
+        height: 24px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .gear-slot:hover {
+        border-color: rgba(var(--c-pink), 0.5);
+        box-shadow: 0 0 8px rgba(var(--c-pink), 0.45);
+    }
+
+    .gear-slot.main-hand {
+        border-color: rgba(var(--c-blue), 0.35);
+    }
+
+    .gear-slot.off-hand {
+        border-color: rgba(var(--c-purple), 0.35);
+    }
+
+    .gear-icon {
+        width: 16px;
+        height: 16px;
+        image-rendering: pixelated;
+        image-rendering: -moz-crisp-edges;
+        image-rendering: crisp-edges;
     }
 </style>

@@ -13,15 +13,16 @@
     const cSettings = settings as HudArrayListSettings;
 
     // 颜色配置
-    const blueColor   = { r: 88,  g: 204, b: 250 };  // 顶部蓝
-    const pinkColor   = { r: 245, g: 150, b: 200 };  // 中间粉
-    const purpleColor = { r: 123, g: 44,  b: 191 };  // 底部紫
+    // 蓝: rgb(88, 204, 250)
+    // 粉: rgb(245, 150, 200)
+    // 紫: rgb(123, 44, 191)
 
     const tagColor = cSettings.tagColor ?? 'rgba(255,255,255,0.85)';
-
-    // 固定字体，只保留字号设置
     const fontSize = cSettings.fontSize ?? 14;
     const fontFamily = 'Inter, system-ui, -apple-system, sans-serif';
+
+    // 循环周期（毫秒）：一个完整颜色循环的时间
+    const CYCLE_MS = 6000;
 
     let enabledModules: Module[] = [];
 
@@ -54,8 +55,8 @@
         await updateEnabledModules();
     });
 
-    onMount(async () => {
-        await updateEnabledModules();
+    onMount(() => {
+        updateEnabledModules();
     });
 
     listen("moduleToggle", async () => {
@@ -65,24 +66,21 @@
     listen("refreshArrayList", async () => {
         await updateEnabledModules();
     });
+
+    function moduleDelay(index: number, total: number): string {
+        if (total <= 1) return "0s";
+        const baseProgress = index / (total - 1);
+        // 列表跨度占相位的 0.66（蓝→粉→紫）
+        const phase = baseProgress * 0.66;
+        // animation-delay 为负值，表示从动画的该相位立即开始
+        return `-${phase * (CYCLE_MS / 1000)}s`;
+    }
 </script>
 
 <div class="arraylist">
     {#each enabledModules as { name, tag }, index (name)}
         {@const totalItems = enabledModules.length}
-        {@const progress = totalItems > 1 ? index / (totalItems - 1) : 0}
-
-        <!-- 三色分段渐变 -->
-        {@const half = 0.5}
-        {@const r = progress <= half
-            ? Math.round(blueColor.r + (pinkColor.r - blueColor.r) * (progress / half))
-            : Math.round(pinkColor.r + (purpleColor.r - pinkColor.r) * ((progress - half) / half))}
-        {@const g = progress <= half
-            ? Math.round(blueColor.g + (pinkColor.g - blueColor.g) * (progress / half))
-            : Math.round(pinkColor.g + (purpleColor.g - pinkColor.g) * ((progress - half) / half))}
-        {@const b = progress <= half
-            ? Math.round(blueColor.b + (pinkColor.b - blueColor.b) * (progress / half))
-            : Math.round(pinkColor.b + (purpleColor.b - pinkColor.b) * ((progress - half) / half))}
+        {@const delay = moduleDelay(index, totalItems)}
 
         <div
             class="module"
@@ -90,14 +88,12 @@
                 font-size: {fontSize}px;
                 font-family: {fontFamily};
                 {cSettings.itemAlignment === 'Left' ? 'margin-right: auto;' : 'margin-left: auto;'}
+                --delay: {delay};
             "
             animate:flip={{ duration: 200 }}
             transition:fly={{ x: 50, duration: 200 }}
         >
-            <span
-                class="name"
-                style="color: rgb({r}, {g}, {b});"
-            >
+            <span class="name">
                 {$spaceSeperatedNames ? convertToSpacedString(name) : name}
             </span>
 
@@ -129,6 +125,16 @@
 
   .name {
     font-weight: 700;
+    color: rgb(88, 204, 250); /* fallback / 初始色 */
+    animation: colorCycle 6s linear infinite;
+    animation-delay: var(--delay, 0s);
+  }
+
+  @keyframes colorCycle {
+    0%    { color: rgb(88, 204, 250); }   /* 蓝 */
+    33.3% { color: rgb(245, 150, 200); }  /* 粉 */
+    66.6% { color: rgb(123, 44, 191); }   /* 紫 */
+    100%  { color: rgb(88, 204, 250); }   /* 回到蓝，无缝循环 */
   }
 
   .tag {
