@@ -1,16 +1,3 @@
-/*
- * This file is part of LiquidBounce (https://github.com/CCBlueX/LiquidBounce)
- *
- * 原生 Kotlin ClickGUI —— 经典面板风, 零浏览器零 MCEF
- *
- * 基于 LiquidBounce 0.38.0 (MC 26.1) 源码 API 编写
- * 绘制上下文: GuiGraphicsExtractor (26.1 中 GuiGraphics 的替代)
- * 文字: context.text(font, str, x, y, color)
- * 矩形: GuiGraphicsExtractor.fill(x1, y1, x2, y2, color)
- *
- * 放置路径:
- *   src/main/kotlin/net/ccbluex/liquidbounce/features/module/modules/render/clickgui/NativeClickGuiScreen.kt
- */
 package net.ccbluex.liquidbounce.features.module.modules.render.clickgui
 
 import com.mojang.blaze3d.platform.InputConstants
@@ -39,29 +26,9 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
-/**
- * 原生 ClickGUI —— 经典面板风, 零浏览器零 MCEF
- *
- * 操作:
- *   左键模块 = 开关
- *   右键模块 = 展开/收起该模块设置
- *   右键标题 = 最小化/还原整个面板（还原时恢复之前展开的模块）
- *   拖动标题 = 移动面板
- *   滚轮 = 滚动
- *   顶部搜索框 = 输入关键字过滤模块
- *   右下角 [DIY Theme] = 打开颜色编辑模式
- *
- * 状态持久化:
- *   - 展开模块 / 面板位置 / 最小化状态 / 搜索关键词：静态字段，关闭 ClickGUI 后保留
- *   - 主题颜色：静态字段 + 磁盘文件（config/liquidbounce/nativeclickgui-theme.txt），
- *     关闭游戏后重开依然保留
- *
- * 暂停:
- *   - 编辑文本 / 聚焦搜索框时暂停游戏，角色不再移动
- */
 class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
 
-    //颜色管理
+    //管理你的颜色
     class ClickGuiTheme {
         var accent = 0xFF4677FF.toInt()
         var panelBg = 0xF016161A.toInt()
