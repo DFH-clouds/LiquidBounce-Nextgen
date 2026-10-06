@@ -791,6 +791,15 @@
   "liquidbounce.module.newChunks.description": "高亮显示可能是新生成的区块。",
   "liquidbounce.module.strongholdFinder.description": "跟踪末影之眼投掷并预测最可能的要塞区块候选。",
   "liquidbounce.module.strongholdFinder.messages.sampleCaptured": "已采集样本（#%s）。",
-  "liquidbounce.module.strongholdFinder.messages.bestChunk": "最佳区块：%s, %s（p=%s%%）。"
+  "liquidbounce.module.strongholdFinder.messages.bestChunk": "最佳区块：%s, %s（p=%s%%）。",
+  "liquidbounce.module.killAuraSound.description":"攻击音效",
+  "liquidbounce.module.autoL.description": "击杀播报提醒",
+  "liquidbounce.module.stuck.description": "卡空",
+  "liquidbounce.module.playerStatusDetector.description": "检测其他玩家的装备及药水效果",
+  "liquidbounce.module.lP.description": "一个仿windows蓝屏的小东西",
+  "liquidbounce.module.criticalsGrim.description": "适用于布吉岛的刀爆（目前好像无法使用",
+  "liquidbounce.module.autoMLG.description": "自动落地水（不一定能用）",
+  "liquidbounce.module.helper.description": "自动计算并提醒钻石/绿宝石刷新波次的 BedWars 辅助模块",
+  "lqiuidbounce.module.grimDisabler.description": "关于布吉岛反作弊的一些禁用器"
 
 }

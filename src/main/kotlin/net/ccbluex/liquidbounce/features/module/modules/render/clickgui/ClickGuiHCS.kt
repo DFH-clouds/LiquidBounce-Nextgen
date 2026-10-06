@@ -200,6 +200,9 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
     private var searchQuery = ""
     private var searchFocused = false
 
+    // 当前鼠标悬停的模块（用于显示描述悬浮提示）
+    private var hoveredModule: ClientModule? = null
+
     // ================================================================
     // 编辑状态判断（用于 isPauseScreen）
     // ================================================================
@@ -393,6 +396,7 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
         }
 
         hits.clear()
+        hoveredModule = null
         for (p in panels) {
             clampScroll(p)
             try {
@@ -401,6 +405,9 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
         }
 
         try { drawSearchBox(context) } catch (_: Throwable) {}
+
+        // 绘制模块描述悬浮提示（在所有面板之上）
+        try { hoveredModule?.let { drawModuleTooltip(context, it) } } catch (_: Throwable) {}
 
 
         val (tbX, tbY, tbW, tbH) = themeBtnRect()
@@ -597,6 +604,7 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
     private fun drawModule(c: GuiGraphicsExtractor, p: Panel, m: ClientModule, x: Float, y: Float, w: Float) {
         if (lastMx in x..(x + w) && lastMy in y..(y + MODULE_H)) {
             rect(c, x, y, w, MODULE_H, ROW_HOVER)
+            hoveredModule = m   // 记录当前悬停的模块
         }
         rect(c, x + 4, y + 6, 4f, 4f, if (m.enabled) ACCENT else DOT_OFF)
 
@@ -625,6 +633,62 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
                 } catch (_: Throwable) {}
                 sy += sh
             }
+        }
+    }
+
+    // ================================================================
+    // 模块描述悬浮提示
+    // ================================================================
+    private fun wrapText(s: String, maxW: Int): List<String> {
+        val out = ArrayList<String>()
+        var cur = ""
+        for (word in s.split(" ")) {
+            if (word.isEmpty()) continue
+            val candidate = if (cur.isEmpty()) word else "$cur $word"
+            if (mc.font.width(candidate) > maxW && cur.isNotEmpty()) {
+                out.add(cur)
+                cur = word
+            } else {
+                cur = candidate
+            }
+        }
+        if (cur.isNotEmpty()) out.add(cur)
+        return out
+    }
+
+    private fun drawModuleTooltip(c: GuiGraphicsExtractor, m: ClientModule) {
+        // Nextgen 的 Value/ClientModule 自带 description Supplier
+        val rawDesc = try { m.description.get() } catch (_: Throwable) { null }
+            ?.takeIf { it.isNotBlank() } ?: return
+
+        val maxW = 180
+        val titleLines = wrapText(splitName(m.name), maxW)
+        val descLines = wrapText(rawDesc, maxW)
+        val all = titleLines + descLines
+
+        val textW = all.maxOf { mc.font.width(it) }
+        val w = textW + 12
+        val lineH = 10
+        val h = all.size * lineH + 10
+
+        // 跟随鼠标，超出屏幕时翻转方向
+        var tx = lastMx + 14f
+        var ty = lastMy + 8f
+        if (tx + w > this.width) tx = lastMx - w - 6f
+        if (ty + h > this.height) ty = lastMy - h - 6f
+        tx = tx.coerceAtLeast(2f)
+        ty = ty.coerceAtLeast(2f)
+
+        rect(c, tx, ty, w.toFloat(), h.toFloat(), 0xF018181E.toInt())
+        rect(c, tx, ty, w.toFloat(), 1f, ACCENT)
+        rect(c, tx, ty, 1f, h.toFloat(), BORDER)
+        rect(c, tx + w - 1, ty, 1f, h.toFloat(), BORDER)
+        rect(c, tx, ty + h - 1, w.toFloat(), 1f, BORDER)
+
+        all.forEachIndexed { i, line ->
+            val isDesc = i >= titleLines.size
+            text(c, line, (tx + 6).toInt(), (ty + 5 + i * lineH).toInt(),
+                if (isDesc) TEXT_OFF else TEXT_ON)
         }
     }
 

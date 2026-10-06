@@ -74,6 +74,7 @@ import net.ccbluex.liquidbounce.features.module.modules.exploit.ModuleNameCollec
 import net.ccbluex.liquidbounce.features.module.modules.exploit.ModuleNoPitchLimit
 import net.ccbluex.liquidbounce.features.module.modules.exploit.ModulePingSpoof
 import net.ccbluex.liquidbounce.features.module.modules.combat.ModuleCriticalsGrim
+import net.ccbluex.liquidbounce.features.module.modules.exploit.ModuleGrimDisabler
 import net.ccbluex.liquidbounce.features.module.modules.exploit.ModulePlugins
 import net.ccbluex.liquidbounce.features.module.modules.exploit.ModulePortalMenu
 import net.ccbluex.liquidbounce.features.module.modules.exploit.ModuleResetVL
@@ -106,6 +107,7 @@ import net.ccbluex.liquidbounce.features.module.modules.misc.ModuleEasyPearl
 import net.ccbluex.liquidbounce.features.module.modules.misc.ModuleElytraSwap
 import net.ccbluex.liquidbounce.features.module.modules.misc.ModuleFlagCheck
 import net.ccbluex.liquidbounce.features.module.modules.misc.ModuleGUICloser
+import net.ccbluex.liquidbounce.features.module.modules.misc.ModuleHelper
 import net.ccbluex.liquidbounce.features.module.modules.misc.ModuleInventoryTracker
 import net.ccbluex.liquidbounce.features.module.modules.misc.ModuleItemScroller
 import net.ccbluex.liquidbounce.features.module.modules.misc.ModuleMacros
@@ -125,6 +127,7 @@ import net.ccbluex.liquidbounce.features.module.modules.movement.ModuleAirJump
 import net.ccbluex.liquidbounce.features.module.modules.movement.ModuleAnchor
 import net.ccbluex.liquidbounce.features.module.modules.movement.ModuleAntiBounce
 import net.ccbluex.liquidbounce.features.module.modules.movement.ModuleAntiLevitation
+import net.ccbluex.liquidbounce.features.module.modules.movement.ModuleAutoMLG
 import net.ccbluex.liquidbounce.features.module.modules.movement.ModuleAvoidHazards
 import net.ccbluex.liquidbounce.features.module.modules.movement.ModuleBlockBounce
 import net.ccbluex.liquidbounce.features.module.modules.movement.ModuleBlockWalk
@@ -154,7 +157,6 @@ import net.ccbluex.liquidbounce.features.module.modules.movement.longjump.Module
 import net.ccbluex.liquidbounce.features.module.modules.movement.noslow.ModuleNoSlow
 import net.ccbluex.liquidbounce.features.module.modules.movement.noweb.ModuleNoWeb
 import net.ccbluex.liquidbounce.features.module.modules.movement.speed.ModuleSpeed
-import net.ccbluex.liquidbounce.features.module.modules.movement.speed.modes.grim.ModuleSpeedGrim
 import net.ccbluex.liquidbounce.features.module.modules.movement.spider.ModuleSpider
 import net.ccbluex.liquidbounce.features.module.modules.movement.step.ModuleReverseStep
 import net.ccbluex.liquidbounce.features.module.modules.movement.step.ModuleStep
@@ -213,6 +215,7 @@ import net.ccbluex.liquidbounce.features.module.modules.render.ModuleItemChams
 import net.ccbluex.liquidbounce.features.module.modules.render.ModuleItemESP
 import net.ccbluex.liquidbounce.features.module.modules.render.ModuleItemTags
 import net.ccbluex.liquidbounce.features.module.modules.render.ModuleJumpEffect
+import net.ccbluex.liquidbounce.features.module.modules.render.ModuleKillAuraSound
 import net.ccbluex.liquidbounce.features.module.modules.render.ModuleLogoffSpot
 import net.ccbluex.liquidbounce.features.module.modules.render.ModuleMobOwners
 import net.ccbluex.liquidbounce.features.module.modules.render.ModuleNewChunks
@@ -492,6 +495,7 @@ object ModuleManager : EventListener, Collection<ClientModule> by modules {
             // Exploit
             ModuleAbortBreaking,
             ModuleAntiReducedDebugInfo,
+            ModuleGrimDisabler,
             ModuleAntiHunger,
             ModuleClip,
             ModuleExtendedFirework,
@@ -533,6 +537,7 @@ object ModuleManager : EventListener, Collection<ClientModule> by modules {
             ModuleAutoConfig,
             ModuleGUICloser,
             ModuleBookBot,
+            ModuleHelper,
             ModuleAntiBot,
             ModuleBetterTab,
             ModuleItemScroller,
@@ -581,6 +586,7 @@ object ModuleManager : EventListener, Collection<ClientModule> by modules {
             ModuleNoPose,
             ModuleNoPush,
             ModuleNoSlow,
+            ModuleAutoMLG,
             ModuleNoWeb,
             ModuleParkour,
             ModuleEntityControl,
@@ -625,7 +631,6 @@ object ModuleManager : EventListener, Collection<ClientModule> by modules {
             ModuleAutoQueue,
             ModuleSmartEat,
             ModuleReplenish,
-            ModuleSpeedGrim,
             ModuleStuck,
             ModulePotionSpoof,
 
@@ -641,6 +646,7 @@ object ModuleManager : EventListener, Collection<ClientModule> by modules {
             ModuleDamageParticles,
             ModuleParticles,
             ModuleESP,
+            ModuleKillAuraSound,
             ModuleLogoffSpot,
             ModuleFreeCam,
             ModuleSmoothCamera,
