@@ -1,5 +1,6 @@
 package net.ccbluex.liquidbounce.features.module.modules.render.clickgui
 
+import net.minecraft.client.renderer.RenderPipelines
 import com.mojang.blaze3d.platform.InputConstants
 import net.ccbluex.liquidbounce.config.types.RangedValue
 import net.ccbluex.liquidbounce.config.types.Value
@@ -15,13 +16,19 @@ import net.ccbluex.liquidbounce.features.module.ModuleManager
 import net.ccbluex.liquidbounce.render.engine.type.Color4b
 import net.ccbluex.liquidbounce.utils.client.mc
 import net.ccbluex.liquidbounce.utils.input.InputBind
+import net.ccbluex.liquidbounce.utils.render.readNativeImage
+import net.ccbluex.liquidbounce.utils.render.registerTexture
 import net.minecraft.client.gui.GuiGraphicsExtractor
+import net.minecraft.client.renderer.texture.DynamicTexture
+import net.minecraft.resources.Identifier
 import net.minecraft.client.gui.screens.Screen
 import net.minecraft.client.input.CharacterEvent
 import net.minecraft.client.input.KeyEvent
 import net.minecraft.client.input.MouseButtonEvent
 import net.minecraft.network.chat.Component
+import java.awt.Desktop
 import java.io.File
+import java.nio.file.Path
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -86,6 +93,13 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
 
         //check
         private var themeLoaded = false
+
+        // 背景壁纸动态纹理 ID（已注册到 TextureManager）
+        private val BG_TEXTURE_ID: Identifier =
+            Identifier.fromNamespaceAndPath("liquidbounce", "nativeclickgui/background")
+
+        // 背景填充模式名称：0=Fill 1=Fit 2=Stretch 3=Tile
+        private val BG_FIT_NAMES = listOf("Fill", "Fit", "Stretch", "Tile")
 
         //生成主题颜色配置文件
         private fun themeFile(): File {
@@ -196,6 +210,25 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
     private val themeHits = ArrayList<ThemeHit>()
     private var draggingThemeSlider: ThemeHit? = null
 
+    // ================================================================
+    // 背景壁纸状态
+    // ================================================================
+    private var bgMode = false
+    private var bgEnabled = true
+    private var bgDim = 150          // 暗化遮罩 0..255
+    private var bgFit = 0            // 0=Fill 1=Fit 2=Stretch 3=Tile
+    private var bgTexture: DynamicTexture? = null
+    private var bgLoadTried = false
+    private var bgLoadFailed = false
+    private var pendingBgReload = false
+    private var bgStatusMsg: String? = null
+    private var bgStatusUntil = 0L
+
+    private class BgHit(val x: Float, val y: Float, val w: Float, val h: Float, val action: Int)
+
+    private val bgHits = ArrayList<BgHit>()
+    private var draggingBgDim = false
+
 
     private var searchQuery = ""
     private var searchFocused = false
@@ -259,6 +292,7 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
 
         //读取配置文件并加载
         loadThemeFromDisk()
+        loadBgConfig()
 
         val order = listOf("Combat", "Exploit", "Fun", "Misc", "Movement", "Player", "Render", "Client", "World")
         val present = ModuleManager.filter { !it.hidden }.map { it.category.tag }.distinct()
@@ -319,6 +353,7 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
 
 
         saveThemeToDisk()
+        saveBgConfig()
     }
 
     private fun measureValue(v: Value<*>): Int = when {
@@ -387,7 +422,33 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
         lastMx = mouseX.toFloat()
         lastMy = mouseY.toFloat()
 
-        rect(context, 0f, 0f, this.width.toFloat(), this.height.toFloat(), 0xC0101015.toInt())
+        // 处理拖拽导入 / 手动刷新带来的纹理重载请求（渲染线程）
+        if (pendingBgReload) {
+            pendingBgReload = false
+            reloadBackground()
+        }
+        if (bgTexture == null && !bgLoadTried && bgImageFile().exists()) {
+            bgLoadTried = true
+            reloadBackground()
+        }
+
+        // 背景壁纸 + 可调暗化遮罩
+        val bg = bgTexture
+        if (bgEnabled && bg != null) {
+            try {
+                drawBackgroundImage(context, bg)
+            } catch (_: Throwable) {}
+            val overlay = (bgDim.coerceIn(0, 255) shl 24) or 0x101015
+            rect(context, 0f, 0f, this.width.toFloat(), this.height.toFloat(), overlay)
+        } else {
+            rect(context, 0f, 0f, this.width.toFloat(), this.height.toFloat(), 0xC0101015.toInt())
+        }
+
+        if (bgMode) {
+            drawBgEditor(context)
+            super.extractRenderState(context, mouseX, mouseY, partialTick)
+            return
+        }
 
         if (themeMode) {
             drawThemeEditor(context)
@@ -414,7 +475,14 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
         val hovering = lastMx in tbX..(tbX + tbW) && lastMy in tbY..(tbY + tbH)
         text(context, "[DIY Theme]", tbX.toInt(), tbY.toInt(), if (hovering) ACCENT else TEXT_OFF)
 
+        val (bgX, bgY, bgW, bgH) = bgBtnRect()
+        val hoveringBg = lastMx in bgX..(bgX + bgW) && lastMy in bgY..(bgY + bgH)
+        val bgActive = bgEnabled && bgTexture != null
+        text(context, "[BG]", bgX.toInt(), bgY.toInt(),
+            if (hoveringBg) ACCENT else if (bgActive) TEXT_ON else TEXT_OFF)
+
         val msg = when {
+            bgStatusMsg != null && System.currentTimeMillis() < bgStatusUntil -> bgStatusMsg
             listeningBind != null -> "Press a key... (Backspace: unbind, ESC: cancel)"
             listeningKey != null -> "Press a key... (ESC: cancel)"
             editingText != null -> "Typing: ${editBuffer}_ (Enter: confirm, ESC: cancel)"
@@ -851,6 +919,28 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
         val my = event.y().toFloat()
         val button = event.button()
 
+        if (bgMode) {
+            val (px, py, pw, ph) = bgPanelRect()
+            val inside = mx in px..(px + pw) && my in py..(py + ph)
+            if (!inside) {
+                bgMode = false
+                saveBgConfig()
+                return true
+            }
+            val hit = bgHits.lastOrNull { mx in it.x..(it.x + it.w) && my in it.y..(it.y + it.h) }
+            if (hit != null && button == 0) {
+                when (hit.action) {
+                    0 -> toggleBgEnabled()
+                    1 -> { draggingBgDim = true; updateBgDim(hit, mx) }
+                    2 -> { bgFit = (bgFit + 1) % BG_FIT_NAMES.size; saveBgConfig() }
+                    3 -> { bgLoadTried = false; pendingBgReload = true; setBgStatus("Reloading wallpaper...") }
+                    4 -> openBgFolder()
+                    5 -> clearBg()
+                }
+            }
+            return true
+        }
+
         if (themeMode) {
             // 先判断 [Reset] 按钮
             val panelH = 30f + ClickGuiTheme.COUNT * 30f + 40f
@@ -904,6 +994,16 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
         val (tbX, tbY, tbW, tbH) = themeBtnRect()
         if (button == 0 && mx in tbX..(tbX + tbW) && my in tbY..(tbY + tbH)) {
             themeMode = true
+            return true
+        }
+
+        val (bbX, bbY, bbW, bbH) = bgBtnRect()
+        if (mx in bbX..(bbX + bbW) && my in bbY..(bbY + bbH)) {
+            if (button == 0) {
+                bgMode = true
+            } else if (button == 1) {
+                toggleBgEnabled()
+            }
             return true
         }
 
@@ -971,6 +1071,10 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
     }
 
     override fun mouseReleased(event: MouseButtonEvent): Boolean {
+        if (bgMode) {
+            draggingBgDim = false
+            return true
+        }
         if (themeMode) {
             draggingThemeSlider = null
             return true
@@ -983,6 +1087,13 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
     override fun mouseDragged(event: MouseButtonEvent, dx: Double, dy: Double): Boolean {
         val mx = event.x().toFloat()
         val my = event.y().toFloat()
+        if (bgMode) {
+            if (draggingBgDim) {
+                val track = bgDimTrackRect()
+                updateBgDim(BgHit(track[0], track[1], track[2], track[3], 1), mx)
+            }
+            return true
+        }
         if (themeMode) {
             draggingThemeSlider?.let { updateThemeSlider(it, mx) }
             return true
@@ -1005,6 +1116,7 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
     }
 
     override fun mouseScrolled(mouseX: Double, mouseY: Double, scrollX: Double, scrollY: Double): Boolean {
+        if (bgMode) return true
         if (themeMode) return true
         val mx = mouseX.toFloat()
         val my = mouseY.toFloat()
@@ -1021,6 +1133,14 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
 
     override fun keyPressed(event: KeyEvent): Boolean {
         val keyCode: Int = event.key
+
+        if (bgMode) {
+            if (keyCode == InputConstants.KEY_ESCAPE) {
+                bgMode = false
+                saveBgConfig()
+            }
+            return true
+        }
 
         if (themeMode) {
             if (keyCode == InputConstants.KEY_ESCAPE) {
@@ -1090,6 +1210,7 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
     }
 
     override fun charTyped(event: CharacterEvent): Boolean {
+        if (bgMode) return true
         if (themeMode) return true
         if (searchFocused) {
             val ch = event.codepoint.toChar()
@@ -1263,5 +1384,303 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
             if (choice in currentSet) currentSet.remove(choice) else currentSet.add(choice)
             (mv as Value<Any>).set(currentSet)
         } catch (_: Throwable) {}
+    }
+    // ================================================================
+    // 背景壁纸：文件与配置
+    // ================================================================
+    private fun bgDir(): File {
+        val dir = File(mc.gameDirectory, "config/liquidbounce")
+        if (!dir.exists()) dir.mkdirs()
+        return dir
+    }
+
+    private fun bgImageFile() = File(bgDir(), "clickgui-background.png")
+
+    private fun bgConfigFile() = File(bgDir(), "nativeclickgui-bg.txt")
+
+    private fun loadBgConfig() {
+        try {
+            val f = bgConfigFile()
+            if (!f.exists()) return
+            for (line in f.readLines()) {
+                val t = line.trim()
+                if (t.isEmpty() || t.startsWith("#")) continue
+                val parts = t.split("=", limit = 2)
+                if (parts.size != 2) continue
+                val key = parts[0].trim()
+                val value = parts[1].trim()
+                when (key.lowercase()) {
+                    "enabled" -> bgEnabled = value.equals("true", ignoreCase = true)
+                    "dim" -> bgDim = value.toIntOrNull()?.coerceIn(0, 255) ?: bgDim
+                    "fit" -> bgFit = (value.toIntOrNull() ?: 0).coerceIn(0, 3)
+                }
+            }
+        } catch (_: Throwable) {}
+    }
+
+    private fun saveBgConfig() {
+        try {
+            bgConfigFile().writeText(
+                "# NativeClickGui Background\n" +
+                    "# enabled: wallpaper on/off | dim: 0-255 darkness | fit: 0=Fill 1=Fit 2=Stretch 3=Tile\n" +
+                    "enabled=$bgEnabled\n" +
+                    "dim=$bgDim\n" +
+                    "fit=$bgFit\n"
+            )
+        } catch (_: Throwable) {}
+    }
+
+    // ================================================================
+    // 背景壁纸：纹理加载
+    // ================================================================
+    private fun unloadBackground() {
+        try {
+            bgTexture?.close()
+        } catch (_: Throwable) {}
+        bgTexture = null
+    }
+
+    private fun reloadBackground() {
+        unloadBackground()
+        bgLoadFailed = false
+        val f = bgImageFile()
+        if (!f.exists()) return
+        try {
+            val img = f.readNativeImage()   // utils.render，支持 PNG/JPG
+            bgTexture = img.registerTexture(BG_TEXTURE_ID)   // utils.render
+        } catch (_: Throwable) {
+            bgLoadFailed = true
+            setBgStatus("Failed to load wallpaper")
+        }
+    }
+
+    private fun setBgStatus(msg: String) {
+        bgStatusMsg = msg
+        bgStatusUntil = System.currentTimeMillis() + 4000
+    }
+
+    // ================================================================
+    // 背景壁纸：渲染
+    // ================================================================
+    private fun blitBg(c: GuiGraphicsExtractor, x: Int, y: Int, w: Int, h: Int,
+                       u: Float, v: Float, regionW: Int, regionH: Int, texW: Int, texH: Int) {
+        c.blit(RenderPipelines.GUI_TEXTURED, BG_TEXTURE_ID, x, y, u, v, w, h, regionW, regionH, texW, texH)
+    }
+
+    private fun drawBackgroundImage(c: GuiGraphicsExtractor, tex: DynamicTexture) {
+        val img = tex.pixels ?: return
+        val imgW = img.width
+        val imgH = img.height
+        val sw = this.width
+        val sh = this.height
+        if (imgW <= 0 || imgH <= 0 || sw <= 0 || sh <= 0) return
+
+        val imgRatio = imgW.toFloat() / imgH
+        val scrRatio = sw.toFloat() / sh
+
+        when (bgFit) {
+            1 -> { // Fit：完整显示，居中留边
+                val dw: Int
+                val dh: Int
+                if (imgRatio > scrRatio) {
+                    dw = sw; dh = (sw / imgRatio).roundToInt()
+                } else {
+                    dh = sh; dw = (sh * imgRatio).roundToInt()
+                }
+                blitBg(c, (sw - dw) / 2, (sh - dh) / 2, dw, dh, 0f, 0f, imgW, imgH, imgW, imgH)
+            }
+            2 -> { // Stretch：拉伸铺满
+                blitBg(c, 0, 0, sw, sh, 0f, 0f, imgW, imgH, imgW, imgH)
+            }
+            3 -> { // Tile：平铺
+                val tw = max(imgW, 8)
+                val th = max(imgH, 8)
+                var ty = 0
+                while (ty < sh) {
+                    var tx = 0
+                    while (tx < sw) {
+                        blitBg(c, tx, ty, tw, th, 0f, 0f, imgW, imgH, imgW, imgH)
+                        tx += tw
+                    }
+                    ty += th
+                }
+            }
+            else -> { // Fill：等比裁剪铺满（只采样居中的 rw×rh 区域，拉伸到全屏）
+                if (imgRatio > scrRatio) {
+                    val rw = imgH * scrRatio
+                    blitBg(c, 0, 0, sw, sh, (imgW - rw) / 2f, 0f, rw.roundToInt(), imgH, imgW, imgH)
+                } else {
+                    val rh = imgW / scrRatio
+                    blitBg(c, 0, 0, sw, sh, 0f, (imgH - rh) / 2f, imgW, rh.roundToInt(), imgW, imgH)
+                }
+            }
+        }
+    }
+
+    // ================================================================
+    // 背景壁纸：右下角按钮与设置面板布局
+    // ================================================================
+    private fun bgBtnRect(): FloatArray {
+        val w = mc.font.width("[BG]").toFloat()
+        val (tX, _, _, _) = themeBtnRect()
+        return floatArrayOf(tX - w - 8f, this.height - 14f, w, 10f)
+    }
+
+    private fun bgPanelRect(): FloatArray {
+        val panelW = 300f
+        val panelH = 142f
+        val px = (this.width - panelW) / 2f
+        val py = (this.height - panelH) / 2f
+        return floatArrayOf(px, py, panelW, panelH)
+    }
+
+    private fun bgDimTrackRect(): FloatArray {
+        val (px, py) = bgPanelRect()
+        return floatArrayOf(px + 70f, py + 66f, 150f, 10f)
+    }
+
+    private fun drawBgEditor(c: GuiGraphicsExtractor) {
+        val (px, py, pw, ph) = bgPanelRect()
+        rect(c, px, py, pw, ph, 0xF016161A.toInt())
+        rect(c, px, py, pw, 1f, 0xFF2C2C33.toInt())
+        rect(c, px, py + ph - 1, pw, 1f, 0xFF2C2C33.toInt())
+        rect(c, px, py, 1f, ph, 0xFF2C2C33.toInt())
+        rect(c, px + pw - 1, py, 1f, ph, 0xFF2C2C33.toInt())
+
+        text(c, "Background", (px + 10).toInt(), (py + 8).toInt(), 0xFF4677FF.toInt())
+        text(c, "ESC to exit", (px + pw - 70).toInt(), (py + 8).toInt(), 0xFF666670.toInt())
+
+        bgHits.clear()
+
+        // 预览小窗
+        val prevW = 84f
+        val prevH = 48f
+        val prevX = px + pw - prevW - 12f
+        val prevY = py + 24f
+        rect(c, prevX - 1, prevY - 1, prevW + 2, prevH + 2, 0xFF2C2C33.toInt())
+        val tex = bgTexture
+        val pixels = tex?.pixels
+        if (pixels != null) {
+            val imgW = pixels.width
+            val imgH = pixels.height
+            val pr = prevW / prevH
+            val ir = imgW.toFloat() / imgH
+            if (ir > pr) {
+                val rw = imgH * pr
+                blitBg(c, prevX.toInt(), prevY.toInt(), prevW.toInt(), prevH.toInt(),
+                    (imgW - rw) / 2f, 0f, rw.roundToInt(), imgH, imgW, imgH)
+            } else {
+                val rh = imgW / pr
+                blitBg(c, prevX.toInt(), prevY.toInt(), prevW.toInt(), prevH.toInt(),
+                    0f, (imgH - rh) / 2f, imgW, rh.roundToInt(), imgW, imgH)
+            }
+        } else {
+            rect(c, prevX, prevY, prevW, prevH, 0xFF101013.toInt())
+            text(c, "no image", (prevX + 22f).toInt(), (prevY + 20f).toInt(), 0xFF666670.toInt())
+        }
+
+        // Enabled 行
+        val ex = px + 12f
+        var ey = py + 28f
+        if (lastMx in ex..(px + pw - prevW - 16f) && lastMy in ey..(ey + 14)) {
+            rect(c, ex, ey, pw - prevW - 28f, 14f, ROW_HOVER)
+        }
+        rect(c, ex + 2, ey + 4, 6f, 6f, if (bgEnabled) ACCENT else DOT_OFF)
+        text(c, "Enabled", (ex + 12).toInt(), (ey + 3).toInt(), if (bgEnabled) TEXT_ON else TEXT_OFF)
+        bgHits.add(BgHit(ex, ey, pw - prevW - 28f, 14f, 0))
+        ey += 24f
+
+        // Dim 滑块
+        text(c, "Dim: $bgDim", ex.toInt(), ey.toInt(), TEXT_DIM)
+        val (tx, ty, tw, _) = bgDimTrackRect()
+        rect(c, tx, ty + 2, tw, 4f, DOT_OFF)
+        rect(c, tx, ty + 2, tw * (bgDim / 255f), 4f, ACCENT)
+        rect(c, tx + tw * (bgDim / 255f) - 1, ty, 2f, 8f, TEXT_ON)
+        bgHits.add(BgHit(tx, ty - 2, tw, 12f, 1))
+        ey += 26f
+
+        // Fit 模式行
+        if (lastMx in ex..(px + pw - 12) && lastMy in ey..(ey + 14)) {
+            rect(c, ex, ey, pw - 24f, 14f, ROW_HOVER)
+        }
+        text(c, "Fit mode: ${BG_FIT_NAMES[bgFit]}", (ex + 2).toInt(), (ey + 3).toInt(), TEXT_OFF)
+        bgHits.add(BgHit(ex, ey, pw - 24f, 14f, 2))
+        ey += 22f
+
+        // 按钮行
+        val labels = arrayOf("Refresh", "Folder", "Clear")
+        val bw = 76f
+        val gap = 10f
+        var bx = px + (pw - (bw * 3 + gap * 2)) / 2f
+        for (i in labels.indices) {
+            val hovering = lastMx in bx..(bx + bw) && lastMy in ey..(ey + 14)
+            rect(c, bx, ey, bw, 14f, if (hovering) 0xFF2A2A33.toInt() else 0xFF1A1A20.toInt())
+            rect(c, bx, ey, bw, 1f, 0xFF2C2C33.toInt())
+            rect(c, bx, ey + 13, bw, 1f, 0xFF2C2C33.toInt())
+            text(c, labels[i], (bx + (bw - mc.font.width(labels[i])) / 2f).toInt(), (ey + 3).toInt(), TEXT_ON)
+            bgHits.add(BgHit(bx, ey, bw, 14f, 3 + i))
+            bx += bw + gap
+        }
+
+        text(c, "Drag & drop an image into the GUI", (px + 12).toInt(), (py + ph - 12f).toInt(), TEXT_DIM)
+    }
+
+    // ================================================================
+    // 背景壁纸：交互逻辑
+    // ================================================================
+    private fun updateBgDim(hit: BgHit, mx: Float) {
+        val t = ((mx - hit.x) / hit.w).coerceIn(0f, 1f)
+        bgDim = (t * 255f).roundToInt()
+    }
+
+    private fun toggleBgEnabled() {
+        if (bgTexture != null || bgImageFile().exists()) {
+            bgEnabled = !bgEnabled
+            saveBgConfig()
+        } else {
+            setBgStatus("No wallpaper image. Drag one into the GUI!")
+        }
+    }
+
+    private fun openBgFolder() {
+        try {
+            Desktop.getDesktop().open(bgDir())
+            setBgStatus("Opened config folder")
+        } catch (_: Throwable) {
+            setBgStatus("Could not open folder")
+        }
+    }
+
+    private fun clearBg() {
+        unloadBackground()
+        try { bgImageFile().delete() } catch (_: Throwable) {}
+        bgEnabled = false
+        saveBgConfig()
+        setBgStatus("Wallpaper cleared")
+    }
+
+    // ================================================================
+    // 拖放导入壁纸
+    // ================================================================
+    override fun onFilesDrop(paths: List<Path>) {
+        val img = paths.firstOrNull {
+            it.fileName.toString().substringAfterLast('.', "").lowercase() in setOf("png", "jpg", "jpeg")
+        }
+        if (img == null) {
+            setBgStatus("Not an image (use png/jpg)")
+            return
+        }
+        try {
+            val native = img.toFile().readNativeImage()
+            native.writeToFile(bgImageFile())   // 统一转成 PNG 存盘
+            native.close()
+            bgEnabled = true
+            bgLoadTried = false
+            pendingBgReload = true
+            saveBgConfig()
+            setBgStatus("Wallpaper set: ${img.fileName}")
+        } catch (_: Throwable) {
+            setBgStatus("Failed to load image")
+        }
     }
 }

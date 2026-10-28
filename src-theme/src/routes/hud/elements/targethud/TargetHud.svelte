@@ -6,35 +6,71 @@
         ClientPlayerDataEvent
     } from "../../../../integration/events";
     import type { PlayerData, ItemStack, TextComponent, Vec3 } from "../../../../integration/types";
+//半成品targethud
 
-    let target: PlayerData | null = null;
-    let localPos: Vec3 | null = null;
+    let target = $state<PlayerData | null>(null);
+    let localPos = $state<Vec3 | null>(null);
+    let visible = $state(true);
 
-    let visible = true;
-    let hideTimeout: ReturnType<typeof setTimeout>;
+    let hideTimeout: ReturnType<typeof setTimeout> | undefined;
+
+    let distance = $derived(computeDistance(target, localPos));
+    let healthPct = $derived(target ? healthPercent(target.health, target.maxHealth) : 0);
+    let isDanger = $derived(healthPct <= 25);
 
     function startHideTimeout() {
+        clearTimeout(hideTimeout);
         hideTimeout = setTimeout(() => {
             visible = false;
         }, 1000);
     }
 
+    function clonePlayerData(p: PlayerData): PlayerData {
+        return {
+            ...p,
+            position: p.position ? { ...p.position } : p.position,
+            armorItems: p.armorItems ? p.armorItems.map(s => ({ ...s })) : p.armorItems,
+            mainHandStack: p.mainHandStack ? { ...p.mainHandStack } : p.mainHandStack,
+            offHandStack: p.offHandStack ? { ...p.offHandStack } : p.offHandStack,
+        };
+    }
+
+    function setTarget(next: PlayerData | null) {
+        target = next ? clonePlayerData(next) : null;
+        if (target) {
+            visible = true;
+            startHideTimeout();
+        }
+    }
+
+    const DEBUG = false;
+    function log(...args: any[]) {
+        if (DEBUG) console.log("[TargetHud]", ...args);
+    }
+
     listen("targetChange", (data: TargetChangeEvent) => {
-        target = data.target;
-        visible = true;
-        clearTimeout(hideTimeout);
-        startHideTimeout();
+        log("targetChange fired", data.target?.username, data.target?.health, "/", data.target?.maxHealth);
+
+        if (!data.target) {
+            setTarget(null);
+            return;
+        }
+
+        if (target && target.username === data.target.username) {
+            setTarget({ ...target, ...data.target });
+        } else {
+            setTarget(data.target);
+        }
     });
 
+
     listen("clientPlayerData", (event: ClientPlayerDataEvent) => {
-        localPos = event.playerData.position;
+        localPos = event.playerData?.position
+            ? { ...event.playerData.position }
+            : null;
     });
 
     startHideTimeout();
-
-    $: distance = computeDistance(target, localPos);
-    $: healthPct = target ? healthPercent(target.health, target.maxHealth) : 0;
-    $: isDanger = healthPct <= 25;
 
     function computeDistance(t: PlayerData | null, local: Vec3 | null): number | null {
         if (!t || !local) return null;
@@ -88,7 +124,7 @@
         class="target-hud"
         class:danger={isDanger}
     >
-        <div class="glow-layer"></div>
+        <img class="glow-layer" src="img/hud/glow.png" alt="" aria-hidden="true" />
         <div class="flow-layer"></div>
         <div class="border-layer"></div>
 
@@ -105,9 +141,10 @@
         </div>
 
         <div class="health-bar-container">
+            <!-- 用 style: 指令，比字符串插值更稳 -->
             <div
                 class="health-bar-fill"
-                style:width="{healthPct}%"
+                style:transform={`scaleX(${healthPct / 100})`}
             >
                 <div class="health-bar-gradient"></div>
             </div>
@@ -148,6 +185,7 @@
 {/if}
 
 <style lang="scss">
+    /* [Perf] 面板本体：blur(8px) 静态 + 去 saturate；glassPulse 只动画 border/box-shadow */
     .target-hud {
         position: relative;
         display: flex;
@@ -158,8 +196,8 @@
         border-radius: 20px;
 
         background: transparent !important;
-        backdrop-filter: blur(8px) saturate(1.2) !important;
-        -webkit-backdrop-filter: blur(8px) saturate(1.2) !important;
+        backdrop-filter: blur(8px) !important;
+        -webkit-backdrop-filter: blur(8px) !important;
         border: 1px solid rgba(255, 255, 255, 0.08);
         box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15) !important;
 
@@ -182,13 +220,11 @@
 
     @keyframes glassPulse {
         0%, 100% {
-            backdrop-filter: blur(8px) saturate(1.2);
             box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15),
                         0 0 0 0 rgba(var(--c-blue), 0);
             border-color: rgba(255, 255, 255, 0.08);
         }
         50% {
-            backdrop-filter: blur(12px) saturate(1.3);
             box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25),
                         0 0 12px 1px rgba(var(--c-pink), 0.4);
             border-color: rgba(var(--c-pink), 0.5);
@@ -197,18 +233,13 @@
 
     .glow-layer {
         position: absolute;
-        inset: -1px;
+        inset: -20px;
+        width: calc(100% + 40px);
+        height: calc(100% + 40px);
+        object-fit: cover;
         border-radius: 20px;
         pointer-events: none;
         z-index: -3;
-        background: conic-gradient(
-            from 0deg,
-            rgba(var(--c-blue), 0.22),
-            rgba(var(--c-pink), 0.22),
-            rgba(var(--c-purple), 0.22),
-            rgba(var(--c-blue), 0.22)
-        );
-        filter: blur(12px);
         opacity: 0.7;
         animation: glowRotate 6s linear infinite;
         will-change: transform;
@@ -244,10 +275,11 @@
                 mask-composite: exclude;
 
         opacity: 0.9;
+        filter: drop-shadow(0 0 4px rgba(var(--c-pink), 0.5));
         animation:
             flowMove 4s linear infinite,
             flowGlow 3s ease-in-out infinite;
-        will-change: background-position, filter;
+        will-change: background-position, opacity;
     }
 
     @keyframes flowMove {
@@ -256,15 +288,8 @@
     }
 
     @keyframes flowGlow {
-        0%, 100% {
-            opacity: 0.75;
-            filter: drop-shadow(0 0 3px rgba(var(--c-pink), 0.45));
-        }
-        50% {
-            opacity: 1;
-            filter: drop-shadow(0 0 8px rgba(var(--c-pink), 0.85))
-                    drop-shadow(0 0 12px rgba(var(--c-purple), 0.6));
-        }
+        0%, 100% { opacity: 0.75; }
+        50%      { opacity: 1; }
     }
 
     .border-layer {
@@ -359,12 +384,15 @@
     }
 
     .health-bar-fill {
+        width: 100%;
         height: 100%;
         border-radius: 999px;
         position: relative;
         overflow: hidden;
         background: rgba(var(--c-blue), 1);
-        transition: width 0.25s ease-out;
+        transform-origin: left;
+        transition: transform 0.25s ease-out;
+        will-change: transform;
         contain: layout paint;
     }
 

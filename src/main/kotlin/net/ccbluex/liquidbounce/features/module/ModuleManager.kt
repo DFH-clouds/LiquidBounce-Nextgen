@@ -127,7 +127,6 @@ import net.ccbluex.liquidbounce.features.module.modules.movement.ModuleAirJump
 import net.ccbluex.liquidbounce.features.module.modules.movement.ModuleAnchor
 import net.ccbluex.liquidbounce.features.module.modules.movement.ModuleAntiBounce
 import net.ccbluex.liquidbounce.features.module.modules.movement.ModuleAntiLevitation
-import net.ccbluex.liquidbounce.features.module.modules.movement.ModuleAutoMLG
 import net.ccbluex.liquidbounce.features.module.modules.movement.ModuleAvoidHazards
 import net.ccbluex.liquidbounce.features.module.modules.movement.ModuleBlockBounce
 import net.ccbluex.liquidbounce.features.module.modules.movement.ModuleBlockWalk
@@ -165,6 +164,7 @@ import net.ccbluex.liquidbounce.features.module.modules.player.ModuleAntiAFK
 import net.ccbluex.liquidbounce.features.module.modules.player.ModuleAntiExploit
 import net.ccbluex.liquidbounce.features.module.modules.player.ModuleAutoBreak
 import net.ccbluex.liquidbounce.features.module.modules.player.ModuleAutoFish
+import net.ccbluex.liquidbounce.features.module.modules.player.ModuleAutoLDS
 import net.ccbluex.liquidbounce.features.module.modules.player.ModuleAutoRespawn
 import net.ccbluex.liquidbounce.features.module.modules.player.ModuleAutoWalk
 import net.ccbluex.liquidbounce.features.module.modules.player.ModuleAutoWindCharge
@@ -192,6 +192,7 @@ import net.ccbluex.liquidbounce.features.module.modules.player.nofall.ModuleNoFa
 import net.ccbluex.liquidbounce.features.module.modules.player.offhand.ModuleOffhand
 import net.ccbluex.liquidbounce.features.module.modules.render.ModuleAnimations
 import net.ccbluex.liquidbounce.features.module.modules.render.ModuleAntiBlind
+import net.ccbluex.liquidbounce.features.module.modules.render.ModuleArrayList
 import net.ccbluex.liquidbounce.features.module.modules.render.ModuleAspect
 import net.ccbluex.liquidbounce.features.module.modules.render.ModuleAutoF5
 import net.ccbluex.liquidbounce.features.module.modules.render.ModuleBedPlates
@@ -234,6 +235,7 @@ import net.ccbluex.liquidbounce.features.module.modules.render.ModuleSkinChanger
 import net.ccbluex.liquidbounce.features.module.modules.render.ModuleSmoothCamera
 import net.ccbluex.liquidbounce.features.module.modules.render.ModuleStorageESP
 import net.ccbluex.liquidbounce.features.module.modules.render.ModuleTNTTimer
+import net.ccbluex.liquidbounce.features.module.modules.render.ModuleTargetHud
 import net.ccbluex.liquidbounce.features.module.modules.render.ModuleTracers
 import net.ccbluex.liquidbounce.features.module.modules.render.ModuleTrueSight
 import net.ccbluex.liquidbounce.features.module.modules.render.ModuleVoidESP
@@ -579,6 +581,7 @@ object ModuleManager : EventListener, Collection<ClientModule> by modules {
             ModuleFreeze,
             ModuleHighJump,
             ModuleInventoryMove,
+            ModuleAutoLDS,
             ModuleLiquidWalk,
             ModuleLongJump,
             ModuleNoClip,
@@ -586,7 +589,6 @@ object ModuleManager : EventListener, Collection<ClientModule> by modules {
             ModuleNoPose,
             ModuleNoPush,
             ModuleNoSlow,
-            ModuleAutoMLG,
             ModuleNoWeb,
             ModuleParkour,
             ModuleEntityControl,
@@ -643,6 +645,8 @@ object ModuleManager : EventListener, Collection<ClientModule> by modules {
             ModuleBreadcrumbs,
             ModuleCameraClip,
             ModuleClickGui,
+            ModuleArrayList,
+            ModuleTargetHud,
             ModuleDamageParticles,
             ModuleParticles,
             ModuleESP,

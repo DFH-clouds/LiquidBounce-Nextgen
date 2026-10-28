@@ -270,10 +270,15 @@
         applyPlayerData(await getPlayerData());
     }
 
-    function applyPlayerData(nextPlayerData: PlayerData | null) {
-        playerData = nextPlayerData;
-        playerDataPlayerEntries = extractPlayerListEntries(nextPlayerData);
-    }
+        function applyPlayerData(nextPlayerData: PlayerData | null) {
+            playerData = nextPlayerData;
+            // [Perf] 昂贵的深度递归提取只在玩家列表面板打开时执行（面板打开时会触发 refreshClientState 重新提取）
+            if (playerListOpen) {
+                playerDataPlayerEntries = extractPlayerListEntries(nextPlayerData);
+            } else {
+                playerDataPlayerEntries = [];
+            }
+        }
 
     async function updateModules() {
         const nextModules = await getModules();
@@ -985,21 +990,24 @@
         return 1;
     }
 
-    listen("clientPlayerData", (e: ClientPlayerDataEvent) => {
-        if (editMode) return;
-        applyPlayerData(e.playerData);
+        listen("clientPlayerData", (e: ClientPlayerDataEvent) => {
+            if (editMode) return;
+            applyPlayerData(e.playerData);
 
-        const mainHand = e.playerData.mainHandStack;
-        if (mainHand && isBuildableBlock(mainHand.identifier) && mainHand.count > 0) {
-            setScaffoldBlock(mainHand.identifier);
-            if (scaffoldCount <= 0) scaffoldCount = mainHand.count;
-        } else if (!scaffoldActive) {
-            scaffoldCount = 0;
-        }
+            const mainHand = e.playerData.mainHandStack;
+            if (mainHand && isBuildableBlock(mainHand.identifier) && mainHand.count > 0) {
+                setScaffoldBlock(mainHand.identifier);
+                if (scaffoldCount <= 0) scaffoldCount = mainHand.count;
+            } else if (!scaffoldActive) {
+                scaffoldCount = 0;
+            }
 
-        const entriesFromPlayerData = extractPlayerListEntries(e.playerData);
-        if (entriesFromPlayerData.length > 0) playerListEntries = entriesFromPlayerData;
-    });
+            // [Perf] 昂贵的深度递归玩家列表提取仅在 Tab 面板打开时执行
+            if (playerListOpen) {
+                const entriesFromPlayerData = extractPlayerListEntries(e.playerData);
+                if (entriesFromPlayerData.length > 0) playerListEntries = entriesFromPlayerData;
+            }
+        });
 
     listen("blockCountChange", (event) => {
         if (editMode || !scaffoldIslandEnabled) return;
@@ -1256,8 +1264,8 @@
         align-items: stretch;
         gap: 0;
         background: rgba(255, 255, 255, 0.18) !important;
-        backdrop-filter: blur(12px) !important;
-        -webkit-backdrop-filter: blur(12px) !important;
+        backdrop-filter: blur(8px) !important;
+        -webkit-backdrop-filter: blur(8px) !important;
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
         padding: 10px;
         border-radius: 8px;

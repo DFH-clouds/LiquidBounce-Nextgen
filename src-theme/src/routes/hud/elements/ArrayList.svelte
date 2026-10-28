@@ -113,8 +113,9 @@
 
   .module {
     background: rgba(255, 255, 255, 0.18);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    /* [Perf] blur(12px)->blur(6px)：小条目 6px 已足够磨砂，blur 成本≈半径² */
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
     padding: 2px 4px;
     border-radius: 8px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);

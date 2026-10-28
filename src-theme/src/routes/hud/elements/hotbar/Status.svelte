@@ -33,9 +33,7 @@
     <div
             class:align-right={alignRight}
             class="progress-bar"
-            style="width: {Math.floor(
-            (value / max) * 100,
-        )}%; background-color: {color};"
+            style="transform: scaleX({Math.max(0, Math.min(1, value / max))}); background-color: {color};"
     ></div>
 </div>
 
@@ -81,14 +79,18 @@
     }
   }
 
+    /* [Perf] width 动画 -> transform: scaleX：视觉完全一致，但只走合成层，不触发 layout */
     .progress-bar {
+    width: 100%;
+    transform-origin: left;
     border-radius: 8px;
     height: 18px;
-    will-change: width;
-    transition: ease width 0.4s;
+    will-change: transform;
+    transition: transform 0.4s ease;
 
     &.align-right {
       margin-left: auto;
+      transform-origin: right;
     }
   }
 </style>

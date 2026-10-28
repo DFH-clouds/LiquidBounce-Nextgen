@@ -15,14 +15,13 @@ object ModuleKillAuraSound : ClientModule("KillAuraSound", ModuleCategories.COMB
     private val pitch by float("Pitch", 1.0f, 0.5f..2.0f)
     private val soundType by enumChoice("Sound", SoundType.JP)
 
-   //下面是你放MP3的位置 名字自己定义就行
+    //下面是你放MP3的位置 名字自己定义就行
     private enum class SoundType(
         override val tag: String,
         val resourcePath: String
     ) : Tagged {
-        BBB("BBB","/assets/liquidbounce/sounds/bbb.mp3"),
+        BBB("BBB", "/assets/liquidbounce/sounds/bbb.mp3"),
         JP("JP", "/assets/liquidbounce/sounds/jp.mp3"),
-
     }
 
     @Suppress("unused")
@@ -32,6 +31,9 @@ object ModuleKillAuraSound : ClientModule("KillAuraSound", ModuleCategories.COMB
         if (!ModuleKillAura.running || target == null) return@handler
         // 只对杀戮当前目标才播放
         if (event.entity != target) return@handler
+
+        // 关键修复：先停掉上一次还在播放的音效，避免连续攻击时音效叠加
+        ExternalSoundPlayer.stopAll()
 
         ExternalSoundPlayer.play(soundType.resourcePath, volume, pitch)
     }
