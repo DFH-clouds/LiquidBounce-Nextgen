@@ -33,12 +33,12 @@ import kotlin.math.exp
 import kotlin.math.max
 import kotlin.math.sqrt
 
-//一个targethud 一个半成品 26/10/18 By花辞树
+//一个targethud 一个半成品 26/10/18 By花辞树  //已完工 26/10/31
 object ModuleTargetHud : ClientModule("TargetHUD", ModuleCategories.RENDER, aliases = listOf("TargetHUD")) {
 
     private val range by float("Range", 6f, 2f..12f)
-    private val panelX by float("X", 24f, 0f..2000f)
-    private val panelY by float("Y", 24f, 0f..2000f)
+    private val posX by float("X", 490f, -500f..500f)
+    private val posY by float("Y", 205f, -500f..500f)
     private val textScale by float("TextScale", 0.38f, 0.2f..0.8f)
     private val showHead by boolean("ShowHead", true)
 
@@ -197,7 +197,7 @@ object ModuleTargetHud : ClientModule("TargetHUD", ModuleCategories.RENDER, alia
         if (setup == null) logSkin("TextureSetup.singleTexture not found")
         return setup
     }
-//一个诊断小工具
+    //一个诊断小工具
     private fun dumpSkinTextureKeys() {
         try {
             val tm = mc.textureManager
@@ -338,8 +338,8 @@ object ModuleTargetHud : ClientModule("TargetHUD", ModuleCategories.RENDER, alia
         val width = contentW + headBlock + pad * 2
         val height = pad + headerH + rowGap + barH + pad
 
-        val x1 = panelX; val y1 = panelY
-        val x2 = panelX + width; val y2 = panelY + height
+        val x1 = posX; val y1 = posY
+        val x2 = posX + width; val y2 = posY + height
         val alpha = (openAnim * 255).toInt().coerceIn(0, 255)
 
         // 血量/吸收占比
@@ -350,9 +350,9 @@ object ModuleTargetHud : ClientModule("TargetHUD", ModuleCategories.RENDER, alia
         with(event.context) {
             pose().withPush {
                 val s = 0.85f + 0.15f * openAnim
-                translate(panelX + width / 2f, panelY + height / 2f)
+                translate(posX + width / 2f, posY + height / 2f)
                 scale(s, s)
-                translate(-(panelX + width / 2f), -(panelY + height / 2f))
+                translate(-(posX + width / 2f), -(posY + height / 2f))
 
                 val oc = palette(timeSec / 5.0)
                 drawRoundedRect(x1, y1, x2, y2, radius, Color4b(242, 246, 255, (72 * openAnim).toInt()))

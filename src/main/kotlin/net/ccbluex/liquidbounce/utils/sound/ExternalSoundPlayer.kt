@@ -55,7 +55,9 @@ object ExternalSoundPlayer {
                 "[KillAuraSound] play $resourcePath -> ${sound.sampleRate}Hz ${sound.channels}ch, state=$state"
             )
 
-            playingSources[sourceId] = bufferId
+            synchronized(playingSources) {
+                playingSources[sourceId] = bufferId
+            }
         } catch (t: Throwable) {
             System.err.println("[KillAuraSound] play failed: ${t.message}")
         }
@@ -63,16 +65,41 @@ object ExternalSoundPlayer {
 
     fun tick() {
         try {
-            val iter = playingSources.entries.iterator()
-            while (iter.hasNext()) {
-                val (src, buf) = iter.next()
-                if (AL10.alGetSourcei(src, AL10.AL_SOURCE_STATE) != AL10.AL_PLAYING) {
-                    AL10.alDeleteSources(src)
-                    AL10.alDeleteBuffers(buf)
-                    iter.remove()
+            synchronized(playingSources) {
+                val iter = playingSources.entries.iterator()
+                while (iter.hasNext()) {
+                    val (src, buf) = iter.next()
+                    if (AL10.alGetSourcei(src, AL10.AL_SOURCE_STATE) != AL10.AL_PLAYING) {
+                        runCatching { AL10.alDeleteSources(src) }
+                        runCatching { AL10.alDeleteBuffers(buf) }
+                        iter.remove()
+                    }
                 }
             }
         } catch (_: Throwable) {}
+    }
+
+    /**
+     * 立即停止并回收所有正在播放的音效。
+     * 用于 KillAura 连续攻击时打断上一次播放，避免多个音效叠加。
+     */
+    fun stopAll() {
+        try {
+            synchronized(playingSources) {
+                val iter = playingSources.entries.iterator()
+                while (iter.hasNext()) {
+                    val (src, buf) = iter.next()
+                    runCatching {
+                        AL10.alSourceStop(src)
+                        AL10.alDeleteSources(src)
+                    }
+                    runCatching { AL10.alDeleteBuffers(buf) }
+                    iter.remove()
+                }
+            }
+        } catch (t: Throwable) {
+            System.err.println("[KillAuraSound] stopAll failed: ${t.message}")
+        }
     }
 
     fun clearCache() = cache.clear()
@@ -151,13 +178,10 @@ object ExternalSoundPlayer {
     }
 
 
-  // 在字节数组里找第一个真正的音频帧起始偏移。
-    // 会跳过 ID3v2 标签和 Xing/Info 头帧。
 
     private fun findAudioStart(data: ByteArray): Int {
         var i = 0
 
-        //跳过ID3v2
         if (data.size >= 10 &&
             data[0] == 'I'.code.toByte() &&
             data[1] == 'D'.code.toByte() &&
@@ -185,19 +209,19 @@ object ExternalSoundPlayer {
 
             val b2 = data[i + 2].toInt() and 0xFF
             val b3 = data[i + 3].toInt() and 0xFF
-            val mpegVer = (b1 shr 3) and 0x03   // 0=2.5, 1=res, 2=MPEG2, 3=MPEG1
-            val layer   = (b1 shr 1) and 0x03   // 0=res, 1=L3, 2=L2, 3=L1
-            val bitrate = (b2 shr 4) and 0x0F   // 0=free, 15=bad
-            val sampler = (b2 shr 2) and 0x03   // 3=reserved
-            val chanMod = (b3 shr 6) and 0x03   // 3=mono
+            val mpegVer = (b1 shr 3) and 0x03
+            val layer   = (b1 shr 1) and 0x03
+            val bitrate = (b2 shr 4) and 0x0F
+            val sampler = (b2 shr 2) and 0x03
+            val chanMod = (b3 shr 6) and 0x03
 
-            //校验字段合法性
+
             if (mpegVer == 1 || layer == 0 || bitrate == 0 || bitrate == 15 || sampler == 3) {
                 i++
                 continue
             }
 
-            //Check Xing/Info 元数据帧
+
             val sideInfo = when {
                 mpegVer == 3 -> if (chanMod == 3) 17 else 32  // MPEG-1
                 else         -> if (chanMod == 3) 9  else 17  // MPEG-2 / 2.5
@@ -221,7 +245,6 @@ object ExternalSoundPlayer {
                     i += len
                     continue
                 } else {
-                    // 算不出帧长，保守跳过 4 字节继续找
                     i += 4
                     continue
                 }
@@ -233,7 +256,7 @@ object ExternalSoundPlayer {
         return -1
     }
 
-   //处理Mp3
+    //处理Mp3
     private fun calcFrameLength(
         mpegVer: Int,
         layer: Int,

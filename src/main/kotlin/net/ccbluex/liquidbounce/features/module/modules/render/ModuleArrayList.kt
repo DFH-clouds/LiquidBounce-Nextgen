@@ -6,33 +6,32 @@ import net.ccbluex.liquidbounce.event.handler
 import net.ccbluex.liquidbounce.features.module.ClientModule
 import net.ccbluex.liquidbounce.features.module.ModuleCategories
 import net.ccbluex.liquidbounce.features.module.ModuleManager
-import net.ccbluex.liquidbounce.render.FontManager
 import net.ccbluex.liquidbounce.render.drawRoundedRect
 import net.ccbluex.liquidbounce.render.engine.type.Color4b
 import net.ccbluex.liquidbounce.render.withPush
 import net.ccbluex.liquidbounce.utils.client.mc
 import net.ccbluex.liquidbounce.utils.client.scaledDimension
 import net.minecraft.network.chat.Component
-import net.minecraft.network.chat.MutableComponent
 import net.minecraft.network.chat.Style
 import net.minecraft.network.chat.TextColor
 import kotlin.math.exp
 
-//半成品ArrayList 26/10/18
+//已完工 26/10/31
 object ModuleArrayList : ClientModule("ArrayList", ModuleCategories.RENDER, aliases = listOf("ArrList")) {
 
-    private val background by boolean("Background", true)
-    private val accentBar by boolean("AccentBar", false)
-    private val lineHeight by float("Height", 11.5f, 9f..24f)
-    private val textScale by float("TextScale", 0.27f, 0.18f..0.8f)
-    private val rainbow by boolean("Rainbow", true)
+    private val accentBar    by boolean("AccentBar", true)
+    private val rainbow      by boolean("Rainbow", true)
     private val rainbowSpeed by float("RainbowSpeed", 3f, 1f..15f)
 
-    private val fontRenderer
-        get() = FontManager.fontFace("Inter Bold")?.renderer ?: FontManager.FONT_RENDERER
+    private val posX by float("X", 0f, -500f..500f)
+    private val posY by float("Y", 0f, -500f..500f)
+
+    private val uiScale by float("Scale", 0.8f, 0.4f..1.5f)
 
     private class Entry(val module: ClientModule) {
         var anim = 0f
+        var currentY = 0f
+        var targetY = 0f
         var cachedWidth: Float = -1f
     }
 
@@ -42,6 +41,7 @@ object ModuleArrayList : ClientModule("ArrayList", ModuleCategories.RENDER, alia
     private val tickHandler = handler<GameTickEvent> {
         val enabled = ModuleManager.filter { it.enabled }.toHashSet()
         val previous = entries.associateBy { it.module }
+
         entries = ModuleManager
             .mapNotNull { m ->
                 val e = previous[m]
@@ -53,7 +53,7 @@ object ModuleArrayList : ClientModule("ArrayList", ModuleCategories.RENDER, alia
             }
             .sortedByDescending {
                 if (it.cachedWidth < 0f) {
-                    it.cachedWidth = fontRenderer.getStringWidth(fontRenderer.process(Component.literal(it.module.name))) * textScale
+                    it.cachedWidth = mc.font.width(it.module.name).toFloat()
                 }
                 it.cachedWidth
             }
@@ -65,20 +65,19 @@ object ModuleArrayList : ClientModule("ArrayList", ModuleCategories.RENDER, alia
         val q = ((qRaw % 1.0) + 1.0) % 1.0
         val t = q.toFloat()
         return when {
-            q < 1.0 / 3.0 -> Triple(
-                lerp(88, 245, t * 3f), lerp(204, 150, t * 3f), lerp(250, 200, t * 3f))
+            q < 1.0 / 3.0 -> Triple(lerp(60, 220, t * 3f), lerp(180, 120, t * 3f), lerp(230, 180, t * 3f))
             q < 2.0 / 3.0 -> {
                 val u = (t - 1f / 3f) * 3f
-                Triple(lerp(245, 123, u), lerp(150, 44, u), lerp(200, 191, u))
+                Triple(lerp(220, 100, u), lerp(120, 30, u), lerp(180, 170, u))
             }
             else -> {
                 val u = (t - 2f / 3f) * 3f
-                Triple(lerp(123, 88, u), lerp(44, 204, u), lerp(191, 250, u))
+                Triple(lerp(100, 60, u), lerp(30, 180, u), lerp(170, 230, u))
             }
         }
     }
 
-    private fun colored(text: String, rgb: Triple<Int, Int, Int>): MutableComponent {
+    private fun colored(text: String, rgb: Triple<Int, Int, Int>): Component {
         val c = (rgb.first shl 16) or (rgb.second shl 8) or rgb.third
         return Component.literal(text).withStyle(Style.EMPTY.withColor(TextColor.fromRgb(c)))
     }
@@ -89,62 +88,74 @@ object ModuleArrayList : ClientModule("ArrayList", ModuleCategories.RENDER, alia
     private val renderHandler = handler<OverlayRenderEvent> { event ->
         if (entries.isEmpty()) return@handler
 
-        val (scaledWidth, _) = mc.window.scaledDimension
+        val (scaledWidthInt, _) = mc.window.scaledDimension
         val timeSec = System.currentTimeMillis() / 1000.0
         val dt = ((timeSec - lastFrameMs / 1000.0).coerceIn(0.0, 0.1)).toFloat()
         lastFrameMs = System.currentTimeMillis()
         val animF = 1f - exp(-dt * 14f)
 
-        var yOffset = 0f
         val total = entries.size
+        var currentTargetY = 0f
 
         with(event.context) {
             pose().withPush {
+
+                translate(posX, posY)
+
+                scale(uiScale, uiScale)
+
+                val virtualWidth = scaledWidthInt / uiScale
+                val lineHeight = 10f
+
                 for ((index, entry) in entries.withIndex()) {
                     val module = entry.module
+
                     entry.anim += ((if (module.enabled) 1f else 0f) - entry.anim) * animF
                     if (entry.anim <= 0.01f) continue
+
+                    entry.targetY = currentTargetY
+                    if (entry.currentY == 0f) entry.currentY = currentTargetY
+                    entry.currentY += (entry.targetY - entry.currentY) * animF * 1.5f
+
+                    currentTargetY += lineHeight * entry.anim
 
                     val q = timeSec / rainbowSpeed + (if (total <= 1) 0.0 else index / (total - 1.0)) * 0.66
                     val rgb = palette(q)
 
                     val label = if (rainbow) colored(module.name, rgb) else Component.literal(module.name)
-                    val processed = fontRenderer.process(label)
-                    val textWidth = fontRenderer.getStringWidth(processed) * textScale
 
-                    val chipX = scaledWidth - textWidth - 10f
-                    val chipY = 3f + yOffset
-                    val chipW = textWidth + 8f
-                    val chipH = lineHeight - 2.5f
-                    val radius = chipH / 2f - 0.5f
                     val a = entry.anim
+                    val chipH = lineHeight * a
+                    val textWidth = mc.font.width(label).toFloat()
 
-                    if (background) {
-                        drawRoundedRect(
-                            chipX - 0.8f, chipY - 0.8f, chipX + chipW + 0.8f, chipY + chipH + 0.8f, radius + 0.8f,
-                            fillColor = Color4b(255, 255, 255, (40 * a).toInt().coerceIn(0, 255)),
-                        )
-                        drawRoundedRect(
-                            chipX, chipY, chipX + chipW, chipY + chipH, radius,
-                            fillColor = Color4b(20, 20, 35, (85 * a).toInt().coerceIn(0, 255)),
-                        )
-                    }
+                    val chipRight = virtualWidth - 2f
+                    val chipX = chipRight - textWidth
+                    val chipY = entry.currentY
 
+                    // 右侧霓虹细线
                     if (accentBar) {
                         drawRoundedRect(
-                            scaledWidth - 2.5f, chipY, scaledWidth - 1f, chipY + chipH, 1f,
-                            fillColor = Color4b(rgb.first, rgb.second, rgb.third, (230 * a).toInt()),
+                            virtualWidth - 1.2f - 1f, chipY + 1f, virtualWidth - 1f, chipY + chipH - 1f,
+                            radius = 0f,
+                            fillColor = Color4b(rgb.first, rgb.second, rgb.third, (255 * a).toInt())
                         )
                     }
 
-                    fontRenderer.draw(processed) {
-                        x = chipX + 4f
-                        y = chipY + (chipH - fontRenderer.height * textScale) / 2f
-                        scale = textScale
-                        shadow = true
-                    }
+                    val textX = chipX - 2f
+                    val textY = chipY + (chipH - 8f) / 2f
 
-                    yOffset += lineHeight * entry.anim
+                    // 计算 ARGB 颜色
+                    val alphaInt = (a * 255).toInt().coerceIn(0, 255)
+                    val colorInt = (alphaInt shl 24) or (rgb.first shl 16) or (rgb.second shl 8) or rgb.third
+
+                    event.context.text(
+                        mc.font,
+                        label,
+                        textX.toInt(),
+                        textY.toInt(),
+                        colorInt,
+                        true
+                    )
                 }
             }
         }

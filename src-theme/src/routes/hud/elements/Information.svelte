@@ -2,6 +2,7 @@
  // 原代码来自 https://github.com/snwmdd114514-lang/BeautifyBouncePlus/tree/main
  // 本代码移除了音乐播放相关代码 并修复了在scaffold状态下 方块过多 block文本显示异常的bug
  // 额外修改：移除坐标和服务器延迟显示，添加时间显示，修复图标，紧凑布局，宽度自适应
+ // 额外修改：FPS 与时间改为逐字符滑动（里程表式）更新
     import { cubicOut, quintOut } from "svelte/easing";
     import { fade, fly, slide } from "svelte/transition";
     import { onDestroy, onMount } from "svelte";
@@ -82,6 +83,10 @@
         "ingot", "nugget", "gem", "diamond", "emerald", "coal", "lapis",
         "redstone", "book", "paper", "map", "music_disc"
     ];
+
+    // 数字滚动过渡：旧字符上滑淡出，新字符下方滑入
+    const ROLL_IN = { y: 14, duration: 260, easing: quintOut };
+    const ROLL_OUT = { y: -14, duration: 260, easing: quintOut };
 
     let clientInfo: ClientInfo | null = null;
     let session: Session | null = null;
@@ -1149,7 +1154,15 @@
                 {#if showFps}
                     <div class="fps-wrap">
                         <span class="info-mask icon-fps-mask" aria-hidden="true"></span>
-                        <span class="value">{dispFps}</span>
+                        <span class="value roll-value">
+                            {#each Array.from(String(dispFps)) as ch, i (i)}
+                                <span class="roll-slot">
+                                    {#key ch}
+                                        <span class="roll-char" in:fly|global={ROLL_IN} out:fly|global={ROLL_OUT}>{ch}</span>
+                                    {/key}
+                                </span>
+                            {/each}
+                        </span>
                         <span class="unit">FPS</span>
                     </div>
                 {/if}
@@ -1158,7 +1171,15 @@
                     <span class="dot"></span>
                 {/if}
 
-                <span class="value">{currentTime}</span>
+                <span class="value roll-value">
+                    {#each Array.from(currentTime) as ch, i (i)}
+                        <span class="roll-slot">
+                            {#key ch}
+                                <span class="roll-char" in:fly|global={ROLL_IN} out:fly|global={ROLL_OUT}>{ch}</span>
+                            {/key}
+                        </span>
+                    {/each}
+                </span>
             </div>
         {/if}
 
@@ -1382,6 +1403,35 @@
         font-size: 12px;
         font-weight: 600;
         color: #3a3a3a !important;
+    }
+
+    /* —— 数字滚动（里程表式）—— */
+    .roll-value {
+        display: inline-flex;
+        align-items: center;
+        height: 18px;
+        overflow: hidden;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .roll-slot {
+        position: relative;
+        display: inline-grid;
+        grid-template-areas: "digit";
+        place-items: center;
+        height: 18px;
+        line-height: 18px;
+        overflow: hidden;
+        flex-shrink: 0;
+        font-variant-numeric: tabular-nums;
+        contain: layout paint;
+    }
+
+    .roll-char {
+        grid-area: digit;
+        display: block;
+        will-change: transform, opacity;
+        backface-visibility: hidden;
     }
 
     .scaffold-panel,

@@ -800,6 +800,7 @@
   "liquidbounce.module.criticalsGrim.description": "适用于布吉岛的刀爆（目前好像无法使用",
   "liquidbounce.module.autoMLG.description": "自动落地水（不一定能用）",
   "liquidbounce.module.helper.description": "自动计算并提醒钻石/绿宝石刷新波次的 BedWars 辅助模块",
-  "lqiuidbounce.module.grimDisabler.description": "关于布吉岛反作弊的一些禁用器"
+  "lqiuidbounce.module.grimDisabler.description": "关于布吉岛反作弊的一些禁用器",
+  "liquidbounce.module.autoLDS.description": "一个自动落地水和自动使用自救平台的模块"
 
 }
