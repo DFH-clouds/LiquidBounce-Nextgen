@@ -1,22 +1,3 @@
-/*
- * This file is part of LiquidBounce (https://github.com/CCBlueX/LiquidBounce)
- *
- * Copyright (c) 2015 - 2025 CCBlueX
- *
- * LiquidBounce is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * LiquidBounce is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with LiquidBounce. If not, see <https://www.gnu.org/licenses/>.
- */
-
 import com.github.gradle.node.npm.task.NpmTask
 import com.github.gradle.node.task.NodeTask
 import dev.detekt.gradle.DetektCreateBaselineTask
@@ -26,7 +7,6 @@ import org.gradle.kotlin.dsl.support.listFilesOrdered
 plugins {
     alias(libs.plugins.fabric.loom)
     alias(libs.plugins.kotlin.jvm)
-  //  alias(libs.plugins.gradleGitProperties)
     alias(libs.plugins.detekt)
     alias(libs.plugins.nodeGradle)
     alias(libs.plugins.dokka)
@@ -91,11 +71,19 @@ allprojects {
 
 loom {
     accessWidenerPath = file("src/main/resources/liquidbounce.accesswidener")
+
+    mixin {
+        useLegacyMixinAp.set(false)
+    }
 }
 
 dependencies {
     // Minecraft
     minecraft(libs.minecraft)
+
+
+    // mp3
+    implementation("fr.delthas:javamp3:1.0.1")
 
     // Fabric
     api(libs.fabric.loader)
@@ -159,8 +147,6 @@ dependencies {
     jij(libs.fastutil4k.moreCollections)
 
     // Test libraries
-//    testImplementation(kotlin("test"))
-//    testImplementation(libs.fabric.loader.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
@@ -173,7 +159,7 @@ tasks.processResources {
     dependsOn("bundleTheme")
 
     val modVersion = providers.gradleProperty("mod_version")
-    val minecraftVersion = providers.gradleProperty("mod_mc_version")
+    val minecraftVersion = providers.gradleProperty("minecraft_version")
     val fabricVersion = libs.versions.fabric.api
     val loaderVersion = libs.versions.fabric.loader
     val minLoaderVersion = libs.versions.fabric.loaderMin
@@ -220,14 +206,11 @@ tasks.processResources {
     }
 }
 
-// The following code will include the theme into the build
-
+// Theme tasks (unchanged)
 tasks.register<NpmTask>("npmInstallTheme") {
     workingDir = file("src-theme")
     args.set(listOf("i"))
-    doLast {
-        logger.info("Successfully installed dependencies for theme")
-    }
+    doLast { logger.info("Successfully installed dependencies for theme") }
     inputs.files("src-theme/package.json", "src-theme/package-lock.json")
     outputs.dir("src-theme/node_modules")
 }
@@ -236,10 +219,7 @@ tasks.register<NpmTask>("buildTheme") {
     dependsOn("npmInstallTheme")
     workingDir = file("src-theme")
     args.set(listOf("run", "build"))
-    doLast {
-        logger.info("Successfully build theme")
-    }
-
+    doLast { logger.info("Successfully build theme") }
     inputs.files(
         "src-theme/package.json",
         "src-theme/package-lock.json",
@@ -255,11 +235,7 @@ tasks.register<NodeTask>("bundleTheme") {
     dependsOn("buildTheme")
     workingDir = file("src-theme")
     script = file("src-theme/bundle.cjs")
-    doLast {
-        logger.info("Successfully attached theme to build")
-    }
-
-    // Incremental stuff
+    doLast { logger.info("Successfully attached theme to build") }
     inputs.files(
         "src-theme/package.json",
         "src-theme/package-lock.json",
@@ -280,16 +256,8 @@ sourceSets {
     }
 }
 
-// ensure that the encoding is set to UTF-8, no matter what the system default is
-// this fixes some edge cases with special characters not displaying correctly
-// see http://yodaconditions.net/blog/fix-for-java-file-encoding-problems-with-gradle.html
 tasks.withType<JavaCompile>().configureEach {
-    // ensure that the encoding is set to UTF-8, no matter what the system default is
-    // this fixes some edge cases with special characters not displaying correctly
-    // see http://yodaconditions.net/blog/fix-for-java-file-encoding-problems-with-gradle.html
-    // If Javadoc is generated, this must be specified in that task too.
     options.encoding = "UTF-8"
-
     options.release = libs.versions.jdk.get().toInt()
 }
 
@@ -298,7 +266,6 @@ tasks.test {
 }
 
 // Detekt check
-
 detekt {
     config.setFrom(file("${rootProject.projectDir}/config/detekt/detekt.yml"))
     buildUponDefaultConfig = true
@@ -320,7 +287,6 @@ tasks.register<DetektCreateBaselineTask>("detektProjectBaseline") {
 }
 
 // i18n check
-
 tasks.register<CompareJsonKeysTask>("verifyI18nJsonKeys") {
     val baselineFileName = "en_us.json"
 
@@ -342,9 +308,6 @@ tasks.register<JavaExec>("liquidInstruction") {
 }
 
 java {
-    // Loom will automatically attach sourcesJar to a RemapSourcesJar task and to the "build" task
-    // if it is present.
-    // If you remove this line, sources will not be generated.
     withSourcesJar()
 
     toolchain {
@@ -377,7 +340,6 @@ tasks.jar {
         attributes["Implementation-Vendor"] = mavenGroup.get()
     }
 
-    // Rename the project's license file to LICENSE_<project_name> to avoid conflicts
     from("LICENSE") {
         rename {
             "${it}_${archivesBaseName.get()}"

@@ -219,6 +219,7 @@ import net.ccbluex.liquidbounce.features.module.modules.render.ModuleJumpEffect
 import net.ccbluex.liquidbounce.features.module.modules.render.ModuleKillAuraSound
 import net.ccbluex.liquidbounce.features.module.modules.render.ModuleLogoffSpot
 import net.ccbluex.liquidbounce.features.module.modules.render.ModuleMobOwners
+import net.ccbluex.liquidbounce.features.module.modules.render.ModuleMotionCamera
 import net.ccbluex.liquidbounce.features.module.modules.render.ModuleNewChunks
 import net.ccbluex.liquidbounce.features.module.modules.render.ModuleNoBob
 import net.ccbluex.liquidbounce.features.module.modules.render.ModuleNoFov
@@ -665,6 +666,7 @@ object ModuleManager : EventListener, Collection<ClientModule> by modules {
             ModuleMobOwners,
             ModuleMurderMystery,
             ModuleHitFX,
+            ModuleMotionCamera,
             ModuleNametags,
             ModuleCombineMobs,
             ModuleAspect,

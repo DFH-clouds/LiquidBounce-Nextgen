@@ -23,6 +23,7 @@ import com.mojang.blaze3d.shaders.ShaderSource
 import com.mojang.blaze3d.shaders.ShaderType
 import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap
 import net.ccbluex.liquidbounce.LiquidBounce
+import net.ccbluex.liquidbounce.render.ClientShaders.Vertex.invoke
 import net.minecraft.resources.Identifier
 
 sealed class ClientShaders(val type: ShaderType) : ShaderSource {
@@ -32,6 +33,8 @@ sealed class ClientShaders(val type: ShaderType) : ShaderSource {
     protected operator fun String.invoke(path: String): Identifier = newShader("${type.getName()}/${this}", path = path)
 
     object Vertex : ClientShaders(ShaderType.VERTEX) {
+
+
 
         @JvmField
         val PlainPosTex = "plain_pos_tex"("shaders/position_tex.vert")
@@ -63,6 +66,8 @@ sealed class ClientShaders(val type: ShaderType) : ShaderSource {
     }
 
     object Fragment : ClientShaders(ShaderType.FRAGMENT) {
+
+
 
         @JvmField
         val BgraPosTex = "bgra_pos_tex_color"("shaders/bgra_position_tex_color.frag")

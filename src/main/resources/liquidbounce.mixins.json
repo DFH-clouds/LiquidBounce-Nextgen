@@ -159,6 +159,8 @@
     "minecraft.util.MixinStringUtil",
     "minecraft.util.MixinVec3i",
     "minecraft.world.chuck.MixinSkyLightEngine",
+    "minecraft.render.MixinCamera",
+    "minecraft.render.MixinMotionCamera",
     "sodium.MixinSodiumAbstractBlockRenderContext",
     "sodium.MixinSodiumLightDataAccess",
     "truffle.MixinCommonJSRequireBuiltin",

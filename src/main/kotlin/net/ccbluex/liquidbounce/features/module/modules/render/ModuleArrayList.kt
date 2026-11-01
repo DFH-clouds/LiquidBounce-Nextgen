@@ -28,6 +28,7 @@ object ModuleArrayList : ClientModule("ArrayList", ModuleCategories.RENDER, alia
 
     private val uiScale by float("Scale", 0.8f, 0.4f..1.5f)
 
+
     private class Entry(val module: ClientModule) {
         var anim = 0f
         var currentY = 0f
