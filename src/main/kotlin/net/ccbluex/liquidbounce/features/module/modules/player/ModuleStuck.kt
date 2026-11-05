@@ -19,7 +19,6 @@ import java.util.concurrent.ConcurrentLinkedQueue
 //卡空 Fix 26/10/7
 object ModuleStuck : ClientModule("Stuck", ModuleCategories.PLAYER, disableOnQuit = true) {
 
-
     private enum class StuckStage { IDLE, CAPTURED, ROTATION_SENT, EXITING }
 
     private var stage = StuckStage.IDLE
@@ -29,7 +28,6 @@ object ModuleStuck : ClientModule("Stuck", ModuleCategories.PLAYER, disableOnQui
     private var disablingInProgress = false
 
     private val pendingPongs: Queue<ServerboundPongPacket> = ConcurrentLinkedQueue()
-
 
     override fun onEnabled() {
         if (tryDisable) return
@@ -56,8 +54,22 @@ object ModuleStuck : ClientModule("Stuck", ModuleCategories.PLAYER, disableOnQui
         }
     }
 
-    //冻结玩家运动
+    /**
+     * 由其它模块（如 Scaffold 的 FallRescue）强制停止。
+     * 绕过 onDisabled 里的「tryDisable 保护」，直接复位所有状态。
+     */
+    fun forceStop() {
+        stage = StuckStage.IDLE
+        capturedPacket = null
+        tryDisable = false
+        exitTicks = 0
+        pendingPongs.clear()
+        disablingInProgress = true
+        enabled = false
+        disablingInProgress = false
+    }
 
+    //冻结玩家运动
     @Suppress("unused")
     private val tickHandler = tickHandler {
         if (!running) return@tickHandler
@@ -72,7 +84,6 @@ object ModuleStuck : ClientModule("Stuck", ModuleCategories.PLAYER, disableOnQui
         }
     }
 
-
     @Suppress("unused")
     private val packetHandler = handler<PacketEvent> { event ->
         val packet = event.packet
@@ -86,7 +97,6 @@ object ModuleStuck : ClientModule("Stuck", ModuleCategories.PLAYER, disableOnQui
                 event.cancelEvent()
                 sendRotation()
             }
-
 
             packet is ServerboundPongPacket -> {
                 pendingPongs.offer(packet)
@@ -126,7 +136,6 @@ object ModuleStuck : ClientModule("Stuck", ModuleCategories.PLAYER, disableOnQui
         }
     }
 
-
     @Suppress("unused")
     private val playerTickHandler = handler<PlayerTickEvent> { _ ->
         if (!running) return@handler
@@ -163,7 +172,6 @@ object ModuleStuck : ClientModule("Stuck", ModuleCategories.PLAYER, disableOnQui
         enabled = false
     }
 
-
     private fun sendPacket(packet: Packet<*>) {
         player.connection.send(packet)
     }
@@ -191,7 +199,6 @@ object ModuleStuck : ClientModule("Stuck", ModuleCategories.PLAYER, disableOnQui
             item is ThrowablePotionItem ||
             item is ExperienceBottleItem
     }
-
 
     @Suppress("unused")
     private val moveInputHandler = handler<MovementInputEvent> { event ->
