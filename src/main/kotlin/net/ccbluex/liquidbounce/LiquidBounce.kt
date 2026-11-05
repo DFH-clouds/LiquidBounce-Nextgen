@@ -21,7 +21,6 @@ package net.ccbluex.liquidbounce
 import com.mojang.blaze3d.systems.RenderSystem
 import kotlinx.coroutines.*
 import kotlinx.coroutines.future.future
-import net.ccbluex.liquidbounce.LiquidBounce.CLIENT_NAME
 import net.ccbluex.liquidbounce.LiquidBounce.Client.commit
 import net.ccbluex.liquidbounce.api.core.ApiConfig
 import net.ccbluex.liquidbounce.api.core.ioScope
@@ -80,11 +79,15 @@ import net.ccbluex.liquidbounce.utils.inventory.EnderChestInventoryTracker
 import net.ccbluex.liquidbounce.utils.inventory.InventoryManager
 import net.ccbluex.liquidbounce.utils.kotlin.EventPriorityConvention.FIRST_PRIORITY
 import net.ccbluex.liquidbounce.utils.kotlin.Minecraft
-import net.minecraft.client.gui.screens.ErrorScreen
+import net.minecraft.client.gui.GuiGraphicsExtractor
+import net.minecraft.client.gui.components.Button
+import net.minecraft.client.gui.screens.Screen
 import net.minecraft.network.chat.Component
 import net.minecraft.resources.Identifier
 import net.minecraft.server.packs.resources.PreparableReloadListener
 import net.minecraft.server.packs.resources.ReloadableResourceManager
+import java.awt.Toolkit
+import java.awt.datatransfer.StringSelection
 import java.io.InputStream
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executor
@@ -101,22 +104,24 @@ import kotlinx.coroutines.TimeoutCancellationException
 //Fix By 花辞树  删这行的死全家
 //添加了UID显示和检测 2026/8/23 原理：通过查询HWID所在的行数 来生成uid 例如HWID在第一行 则为001以此类推
 //添加了Version Check 以及version显示 26/9/27
+//修改为验证失败弹窗，支持复制 HWID 和 B站链接 26/11/5
 
-/**
- * LiquidBounce
- *
- * A free mixin-based injection hacked-client for Minecraft using FabricMC.
- *
- * @author kawaiinekololis (@team CCBlueX)
- */
+//验证错误类型
+enum class VerificationType { VERSION, HWID }
+
+// 自定义验证异常
+class ClientVerificationException(
+    message: String,
+    val type: VerificationType,
+    val jumpUrl: String? = null,
+    val hwid: String? = null
+) : Exception(message)
+
 object LiquidBounce : EventListener {
 
-    /**
-     * CLIENT INFORMATION
-     */
     const val CLIENT_NAME = "LiquidBounce"
     const val CLIENT_AUTHOR = "CCBlueX"
-    val version1 = "9.0"
+    val version1 = "10.0"
 
     private object Client : Config("Client") {
         val version = text("Version", version1)
@@ -152,11 +157,10 @@ object LiquidBounce : EventListener {
     var isInitialized = false
         private set
 
-    /**
-     * 验证通过后存储的三位数字 UID（例如 "001"、"002"）
-     */
     var clientUid: String? = null
         internal set
+
+    private var verificationErrorScreen: CustomVerificationErrorScreen? = null
 
     @JvmStatic
     fun identifier(path: String): Identifier = clientIdentifier(path)
@@ -169,7 +173,6 @@ object LiquidBounce : EventListener {
     @JvmStatic
     fun resourceToString(path: String): String =
         resource(path).use { it.bufferedReader().readText() }
-
 
     private fun getHWID(): String {
         val hwidFile = Paths.get("hwid.dat")
@@ -194,11 +197,8 @@ object LiquidBounce : EventListener {
         return hwid
     }
 
-
-    //这里替换你的HWID验证仓库和版本验证仓库
     private const val HWID_LIST_URL = "https://gitee.com/Huacishu1/liquid-bounce-nextgen-hwid/raw/master/HWID"
     private const val VERSION_CHECK_URL = "https://gitee.com/Huacishu1/liquid-bounce-nextgen-hwid/raw/master/version"
-//你猜我有什么东西没删
 
     private suspend fun verifyClient() {
         if (IN_DEVELOPMENT || System.getProperty("liquidbounce.skipVerification") == "true") {
@@ -213,7 +213,7 @@ object LiquidBounce : EventListener {
                     val url = URL(HWID_LIST_URL)
                     val connection = url.openConnection() as HttpURLConnection
                     connection.requestMethod = "GET"
-                    connection.connectTimeout = 10000   // 10秒
+                    connection.connectTimeout = 10000
                     connection.readTimeout = 10000
                     connection.setRequestProperty("User-Agent", "$CLIENT_NAME/$clientVersion")
 
@@ -236,28 +236,39 @@ object LiquidBounce : EventListener {
                     val index = hwidList.indexOf(currentHWID)
 
                     if (index == -1) {
-                        throw IllegalStateException("Device not authorized (HWID not in whitelist)")
+                        throw ClientVerificationException(
+                            "您的设备未授权！\n(HWID不在白名单内)\n请联系作者上HWID\nB站账号：我是花辞树",
+                            VerificationType.HWID,
+                            "https://space.bilibili.com/1124549701",
+                            currentHWID
+                        )
                     } else {
                         val lineNumber = index + 1
                         clientUid = String.format("%03d", lineNumber)
                         logger.info("HWID verification passed. (Line $lineNumber, UID: ${clientUid})")
-
-
-                        return@withContext  // 成功则退出
+                        return@withContext
                     }
                 } catch (e: Exception) {
                     lastException = e
                     logger.warn("HWID verification attempt ${attempt+1}/3 failed: ${e.message}")
-                    if (attempt < 2) delay(2000)  // 等待2秒后重试
+                    if (attempt < 2) delay(2000)
                 }
             }
 
             logger.error("HWID verification failed after 3 attempts", lastException)
-            throw lastException ?: IllegalStateException("HWID verification failed")
+            if (lastException is ClientVerificationException) {
+                throw lastException
+            } else {
+                throw ClientVerificationException(
+                    "HWID验证失败，请检查网络连接！\n详情: ${lastException?.message}",
+                    VerificationType.HWID,
+                    "https://space.bilibili.com/1124549701",
+                    getHWID() // 网络失败时也尝试显示本地 HWID
+                )
+            }
         }
     }
 
-   //check your Version
     private suspend fun checkVersion() {
         if (IN_DEVELOPMENT || System.getProperty("liquidbounce.skipVerification") == "true") {
             logger.warn("Version verification is disabled (development mode).")
@@ -287,9 +298,12 @@ object LiquidBounce : EventListener {
                     }
 
                     if (latestVersion != version1) {
-                        logger.error("Version mismatch! Client version: $version1, Remote version: $latestVersion. Shutting down.")
-                        Runtime.getRuntime().halt(1)
-                        throw IllegalStateException("Version mismatch, client halted")
+                        logger.error("Version mismatch! Client version: $version1, Remote version: $latestVersion.")
+                        throw ClientVerificationException(
+                            "客户端版本与服务器不一致！\n请前往 GitHub 获取最新版本。\n(当前: $version1, 最新: $latestVersion)",
+                            VerificationType.VERSION,
+                            "https://github.com/DFH-clouds/LiquidBounce-Nextgen/releases"
+                        )
                     }
 
                     logger.info("Version verification passed. (Client: $version1, Remote: $latestVersion)")
@@ -302,11 +316,17 @@ object LiquidBounce : EventListener {
             }
 
             logger.error("Version verification failed after 3 attempts", lastException)
-            Runtime.getRuntime().halt(1)
-            throw lastException ?: IllegalStateException("Version verification failed")
+            if (lastException is ClientVerificationException) {
+                throw lastException
+            } else {
+                throw ClientVerificationException(
+                    "版本验证失败，请检查网络连接！\n详情: ${lastException?.message}",
+                    VerificationType.VERSION,
+                    "https://github.com/DFH-clouds/LiquidBounce-Nextgen/releases"
+                )
+            }
         }
     }
-
 
     private fun initializeClient(
         workerDispatcher: CoroutineDispatcher,
@@ -322,26 +342,26 @@ object LiquidBounce : EventListener {
         try {
             initializeManagers(workerDispatcher, renderThreadDispatcher)
             initializeFeatures()
-            initializeResources(workerDispatcher)   // 这里执行第一次hwid 和version检测
-
-            // 第二次检测
-            val secondVersionCheck = async { checkVersion() }
-
-            // 获取不到 UID 直接关闭游戏（开发模式或跳过验证除外）
-            if (clientUid == null && !IN_DEVELOPMENT
-                && System.getProperty("liquidbounce.skipVerification") != "true") {
-                logger.error("HWID verification failed. Client UID is null. Shutting down.")
-                Runtime.getRuntime().halt(1)
-                return@future
-            }
-
-            // 等待检测完毕
-            secondVersionCheck.await()
+            initializeResources(workerDispatcher)
 
             prepareGuiStage(renderThreadDispatcher)
         } catch (e: Exception) {
-
             logger.error("Client initialization failed: ${e.message}", e)
+
+            if (e is ClientVerificationException) {
+                val title = Component.literal("客户端验证失败")
+                val reason = Component.literal("${e.message}\n请点击下方按钮复制对应信息。")
+
+                val screen = CustomVerificationErrorScreen(title, reason, e.jumpUrl, e.hwid)
+                verificationErrorScreen = screen
+
+                mc.execute {
+                    mc.setScreen(screen)
+                }
+
+                return@future
+            }
+
             Runtime.getRuntime().halt(1)
             throw e
         }
@@ -373,7 +393,6 @@ object LiquidBounce : EventListener {
                 logger.error("[ScriptAPI] Failed to initialize script engine.", error)
             }
         }
-
         ConfigSystem
         RenderedEntities
         ChunkScanner
@@ -397,7 +416,6 @@ object LiquidBounce : EventListener {
         PostRotationExecutor
         ServerObserver
         ItemImageAtlas
-
         scriptEngineJob.join()
     }
 
@@ -415,57 +433,43 @@ object LiquidBounce : EventListener {
         logger.info("Initializing API...")
         ApiConfig.config
 
+        try {
+            withTimeout(8000L) { checkVersion() }
+        } catch (e: TimeoutCancellationException) {
+            if (!IN_DEVELOPMENT && System.getProperty("liquidbounce.skipVerification") != "true") {
+                throw ClientVerificationException("版本验证超时，请检查您的网络连接！", VerificationType.VERSION, "https://github.com/DFH-clouds/LiquidBounce-Nextgen/releases")
+            }
+        } catch (e: Exception) {
+            if (!IN_DEVELOPMENT && System.getProperty("liquidbounce.skipVerification") != "true") {
+                throw e
+            }
+        }
+
+        try {
+            withTimeout(8000L) { verifyClient() }
+        } catch (e: TimeoutCancellationException) {
+            if (!IN_DEVELOPMENT && System.getProperty("liquidbounce.skipVerification") != "true") {
+                throw ClientVerificationException("HWID验证超时，请检查您的网络连接！", VerificationType.HWID, "https://space.bilibili.com/1124549701", getHWID())
+            }
+        } catch (e: Exception) {
+            if (!IN_DEVELOPMENT && System.getProperty("liquidbounce.skipVerification") != "true") {
+                throw e
+            }
+        }
+
+        if (clientUid == null && !IN_DEVELOPMENT && System.getProperty("liquidbounce.skipVerification") != "true") {
+            throw ClientVerificationException(
+                "HWID验证失败，无法获取客户端UID。",
+                VerificationType.HWID,
+                "https://space.bilibili.com/1124549701",
+                getHWID()
+            )
+        }
+
         supervisorScope {
-
-            val verificationDeferred = async {
-                try {
-                    withTimeout(8000L) { verifyClient() }
-                } catch (e: TimeoutCancellationException) {
-                    if (IN_DEVELOPMENT || System.getProperty("liquidbounce.skipVerification") == "true") {
-                        logger.warn("HWID verification timed out, but skipping is enabled.")
-                        return@async
-                    }
-                    throw IllegalStateException("HWID verification timed out", e)
-                } catch (e: Exception) {
-                    if (IN_DEVELOPMENT || System.getProperty("liquidbounce.skipVerification") == "true") {
-                        logger.warn("HWID verification failed, but skipping is enabled: ${e.message}")
-                        return@async
-                    }
-                    throw e
-                }
-            }
-
-            // 第一次版本检测 与 HWID 检测一同执行
-            val versionCheckDeferred = async {
-                try {
-                    withTimeout(8000L) { checkVersion() }
-                } catch (e: TimeoutCancellationException) {
-                    if (IN_DEVELOPMENT || System.getProperty("liquidbounce.skipVerification") == "true") {
-                        logger.warn("Version verification timed out, but skipping is enabled.")
-                        return@async
-                    }
-                    logger.error("Version verification timed out", e)
-                    Runtime.getRuntime().halt(1)
-                } catch (e: Exception) {
-                    if (IN_DEVELOPMENT || System.getProperty("liquidbounce.skipVerification") == "true") {
-                        logger.warn("Version verification failed, but skipping is enabled: ${e.message}")
-                        return@async
-                    }
-                    logger.error("Version verification failed", e)
-                    Runtime.getRuntime().halt(1)
-                }
-            }
-
             launch { LanguageManager.loadDefault() }
-            launch {
-                val update = withTimeoutOrNull(8000) { ClientUpdate.update.await() } ?: return@launch
-                logger.info("[Update] Update available: $clientVersion -> ${update.lbVersion}")
-            }
-            launch {
-                CosmeticService.refreshCarriers(force = true) {
-                    logger.info("Successfully loaded ${CosmeticService.carriers.size} cosmetics carriers.")
-                }
-            }
+            launch { withTimeoutOrNull(8000) { ClientUpdate.update.await() }?.let { logger.info("[Update] Update available: $clientVersion -> ${it.lbVersion}") } }
+            launch { CosmeticService.refreshCarriers(force = true) { logger.info("Successfully loaded ${CosmeticService.carriers.size} cosmetics carriers.") } }
             launch { HeadsCreativeModeTab.heads.getFinalState() }
             launch { AutoConfig.reloadConfigs() }
             launch { IpInfoApi.original }
@@ -475,30 +479,17 @@ object LiquidBounce : EventListener {
                     ClientAccountManager.clientAccount = ClientAccount.ENV_ACCOUNT
                 }
                 if (ClientAccountManager.clientAccount != ClientAccount.EMPTY_ACCOUNT) {
-                    runCatching {
-                        ClientAccountManager.clientAccount.renew()
-                    }.onFailure {
-                        logger.error("Failed to renew client account token.", it)
-                        ClientAccountManager.clientAccount = ClientAccount.EMPTY_ACCOUNT
-                    }.onSuccess {
-                        logger.info("Successfully renewed client account token.")
-                    }
+                    runCatching { ClientAccountManager.clientAccount.renew() }
+                        .onFailure { ClientAccountManager.clientAccount = ClientAccount.EMPTY_ACCOUNT }
                     ConfigSystem.store(ClientAccountManager)
                 }
             }
-
-            verificationDeferred.await()
-            versionCheckDeferred.await()
         }
-
         logger.info("API initialization done.")
     }
 
-    private suspend fun prepareGuiStage(
-        dispatcher: CoroutineDispatcher
-    ) = withContext(dispatcher) {
+    private suspend fun prepareGuiStage(dispatcher: CoroutineDispatcher) = withContext(dispatcher) {
         RenderSystem.assertOnRenderThread()
-
         BrowserBackendManager.init()
         ClientInteropServer.start()
         if (!ClientInteropServer.isSkipping) {
@@ -507,40 +498,20 @@ object LiquidBounce : EventListener {
             ConfigSystem.load(ThemeManager)
             ThemeManager.load()
         }
-
         BlurEffectRenderer
         ScreenManager
-
         taskManager = TaskManager(ioScope).apply {
             BrowserBackendManager.makeDependenciesAvailable(this)
-            launch("Deep Learning") { task ->
-                runCatching {
-                    DeepLearningEngine.init(task)
-                    ModelManager.load()
-                }.onFailure { exception ->
-                    task.subTasks.clear()
-                    logger.info("Failed to initialize deep learning.", exception)
-                }
-            }
-            launch("Marketplace") { task ->
-                runCatching {
-                    MarketplaceManager.updateAll(task)
-                }.onFailure { exception ->
-                    logger.error("Failed to update marketplace items.", exception)
-                }
-                task.isCompleted = true
-            }
+            launch("Deep Learning") { task -> runCatching { DeepLearningEngine.init(task); ModelManager.load() }.onFailure { task.subTasks.clear() } }
+            launch("Marketplace") { task -> runCatching { MarketplaceManager.updateAll(task) }.onFailure { logger.error("Failed to update marketplace items.", it) }; task.isCompleted = true }
         }
-
         val duration = measureTime { FontManager.createGlyphManager() }
         logger.info("Completed loading fonts in ${duration.inWholeMilliseconds} ms.")
-        logger.info("Fonts: [ ${FontManager.fontFaces.keys.joinToString()} ]")
     }
 
     private fun shutdownClient() {
         if (!isInitialized) return
         isInitialized = false
-        logger.info("Shutting down client...")
         ChunkScanner.stopThread()
         EventManager.unregisterAll()
         ConfigSystem.storeAll()
@@ -554,33 +525,33 @@ object LiquidBounce : EventListener {
             logger.info("Client Version: $clientVersion ($clientCommit)")
             logger.info("Client Branch: $clientBranch")
             logger.info("UID:$clientuid")
-            logger.info("Operating System: ${System.getProperty("os.name")} (${System.getProperty("os.version")})")
-            logger.info("Java Version: ${System.getProperty("java.version")}")
-            logger.info("Screen Resolution: ${mc.window.screenWidth}x${mc.window.screenHeight}")
-            logger.info("Refresh Rate: ${mc.window.refreshRate} Hz")
-
             EventManager
-
             val resourceManager = mc.resourceManager
             if (resourceManager is ReloadableResourceManager) {
                 resourceManager.registerReloadListener(ClientResourceReloader)
                 resourceManager.registerReloadListener(ThemeManager.reloader)
             } else {
-                logger.warn("Failed to register resource reloader!")
-                initializeClient(
-                    workerDispatcher = Dispatchers.Default,
-                    renderThreadDispatcher = Dispatchers.Minecraft,
-                ).thenRun {
+                initializeClient(Dispatchers.Default, Dispatchers.Minecraft).thenRun {
                     ThemeManager.reloader.onResourceManagerReload(resourceManager)
                 }
             }
-        }.onFailure {
-            ErrorHandler.fatal(it, additionalMessage = "Client start")
-        }
+        }.onFailure { ErrorHandler.fatal(it, additionalMessage = "Client start") }
     }
 
     @Suppress("unused")
     private val screenHandler = handler<ScreenEvent>(priority = FIRST_PRIORITY) { event ->
+        if (verificationErrorScreen != null) {
+            if (event.screen !== verificationErrorScreen) {
+                event.cancelEvent()
+                mc.execute {
+                    if (mc.screen !== verificationErrorScreen) {
+                        mc.setScreen(verificationErrorScreen)
+                    }
+                }
+            }
+            return@handler
+        }
+
         val taskManager = taskManager ?: return@handler
         if (!taskManager.isCompleted && event.screen !is TaskProgressScreen) {
             event.cancelEvent()
@@ -596,20 +567,13 @@ object LiquidBounce : EventListener {
     @Suppress("unused")
     private val uidRenderHandler = handler<OverlayRenderEvent> { event ->
         val uid = clientUid ?: return@handler
-        val verion = version1
-
         val context = event.context
         val font = mc.font
-        val uidtext = "§7UID: §f$uid"
-        val veriontext = "§7Version: §f$verion"
-
-
         val x = 5
         val y = mc.window.guiScaledHeight - font.lineHeight - 5
         val y1 = mc.window.guiScaledHeight - font.lineHeight - 16
-
-        context.text(font, veriontext, x, y, -1, true)
-        context.text(font, uidtext, x, y1, -1, true)
+        context.text(font, "§7Version: §f$version1", x, y, -1, true)
+        context.text(font, "§7UID: §f$uid", x, y1, -1, true)
     }
 
     private object ClientResourceReloader : PreparableReloadListener {
@@ -621,16 +585,96 @@ object LiquidBounce : EventListener {
         ): CompletableFuture<Void> {
             return synchronizer.wait(net.minecraft.util.Unit.INSTANCE)
                 .thenCompose {
-                    val prepareDispatcher = prepareExecutor.asCoroutineDispatcher()
-                    val applyDispatcher = applyExecutor.asCoroutineDispatcher()
                     @Suppress("UNCHECKED_CAST")
                     initializeClient(
-                        workerDispatcher = prepareDispatcher,
-                        renderThreadDispatcher = applyDispatcher,
+                        workerDispatcher = prepareExecutor.asCoroutineDispatcher(),
+                        renderThreadDispatcher = applyExecutor.asCoroutineDispatcher(),
                     ) as CompletableFuture<Void>
                 }
         }
-
         override fun getName() = CLIENT_NAME
+    }
+
+    // 自定义的验证失败弹窗
+    class CustomVerificationErrorScreen(
+        private val errorTitle: Component,
+        private val errorReason: Component,
+        private val jumpUrl: String?,
+        private val hwid: String?
+    ) : Screen(Component.literal("Verification Failed")) {
+
+        private fun copyToClipboard(text: String) {
+            try {
+                mc.keyboardHandler.setClipboard(text)
+            } catch (_: Throwable) {
+                try {
+                    val clipboard = Toolkit.getDefaultToolkit().systemClipboard
+                    clipboard.setContents(StringSelection(text), null)
+                } catch (_: Throwable) {}
+            }
+        }
+
+        private fun quitGame() {
+            mc.stop()
+            Thread {
+                try { Thread.sleep(1000) } catch (_: Exception) {}
+                System.exit(0)
+            }.start()
+        }
+
+        override fun init() {
+            super.init()
+            var btnY = this.height / 2 + 30
+
+            if (hwid != null) {
+                this.addRenderableWidget(
+                    Button.builder(Component.literal("复制 HWID")) { _ ->
+                        copyToClipboard(hwid)
+                    }.bounds(this.width / 2 - 100, btnY, 200, 20).build()
+                )
+                btnY += 24
+            }
+
+            if (jumpUrl != null) {
+                this.addRenderableWidget(
+                    Button.builder(Component.literal("复制 B站/GitHub 链接并退出")) { _ ->
+                        copyToClipboard(jumpUrl)
+                        quitGame()
+                    }.bounds(this.width / 2 - 100, btnY, 200, 20).build()
+                )
+                btnY += 24
+            }
+
+            this.addRenderableWidget(
+                Button.builder(Component.literal("直接退出")) { _ ->
+                    quitGame()
+                }.bounds(this.width / 2 - 100, btnY, 200, 20).build()
+            )
+        }
+
+        override fun extractRenderState(
+            context: GuiGraphicsExtractor,
+            mouseX: Int,
+            mouseY: Int,
+            partialTick: Float
+        ) {
+            context.fill(0, 0, this.width, this.height, 0xEF201010.toInt())
+            val font = mc.font
+
+            val titleW = font.width(this.errorTitle)
+            context.text(font, this.errorTitle, (this.width - titleW) / 2, this.height / 2 - 110, 0xFFFF5555.toInt())
+
+            val lines = this.errorReason.string.split("\n")
+            var y = this.height / 2 - 85
+            for (line in lines) {
+                val w = font.width(line)
+                context.text(font, line, (this.width - w) / 2, y, 0xFFFFFFFF.toInt())
+                y += 12
+            }
+
+            super.extractRenderState(context, mouseX, mouseY, partialTick)
+        }
+
+        override fun shouldCloseOnEsc(): Boolean = false
     }
 }

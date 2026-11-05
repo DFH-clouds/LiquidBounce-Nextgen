@@ -9,7 +9,6 @@ import net.ccbluex.liquidbounce.features.module.ModuleManager
 import net.ccbluex.liquidbounce.render.drawRoundedRect
 import net.ccbluex.liquidbounce.render.engine.type.Color4b
 import net.ccbluex.liquidbounce.render.withPush
-import net.ccbluex.liquidbounce.utils.client.mc
 import net.ccbluex.liquidbounce.utils.client.scaledDimension
 import net.minecraft.network.chat.Component
 import net.minecraft.network.chat.Style
@@ -26,7 +25,7 @@ object ModuleArrayList : ClientModule("ArrayList", ModuleCategories.RENDER, alia
     private val posX by float("X", 0f, -500f..500f)
     private val posY by float("Y", 0f, -500f..500f)
 
-    private val uiScale by float("Scale", 0.8f, 0.4f..1.5f)
+    private val uiScale by float("Scale", 0.9f, 0.7f..1.2f)
 
 
     private class Entry(val module: ClientModule) {

@@ -1284,10 +1284,12 @@
         flex-direction: column;
         align-items: stretch;
         gap: 0;
-        background: rgba(255, 255, 255, 0.18) !important;
-        backdrop-filter: blur(8px) !important;
-        -webkit-backdrop-filter: blur(8px) !important;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
+        background: transparent !important;
+        backdrop-filter: blur(8px) saturate(1.2) !important;
+        -webkit-backdrop-filter: blur(8px) saturate(1.2) !important;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        animation: glassPulse 4s ease-in-out infinite;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15) !important;
         padding: 10px;
         border-radius: 8px;
         width: fit-content;
@@ -1297,12 +1299,16 @@
         transition:
             width 190ms cubic-bezier(0.22, 1, 0.36, 1),
             max-width 190ms cubic-bezier(0.22, 1, 0.36, 1),
-            background 120ms ease-out,
             border-radius 160ms ease-out,
-            padding 160ms ease-out;
+            padding 160ms ease-out,
+            box-shadow 0.3s;
         will-change: width, border-radius;
 
         min-width: 0;
+
+        &:hover {
+            box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25) !important;
+        }
 
         &.expanded {
             border-radius: 16px;   /* 保留原展开样式 */
@@ -1314,6 +1320,19 @@
 
         &.scaffold-mode:not(.player-mode) {
             border-radius: 18px;
+        }
+    }
+
+    @keyframes glassPulse {
+        0%, 100% {
+            backdrop-filter: blur(8px) saturate(1.2);
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+            border-color: rgba(255, 255, 255, 0.08);
+        }
+        50% {
+            backdrop-filter: blur(12px) saturate(1.3);
+            box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
+            border-color: rgba(255, 255, 255, 0.15);
         }
     }
 

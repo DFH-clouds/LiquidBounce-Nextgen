@@ -141,19 +141,23 @@
                     </div>
                 {/if}
                 <div class="pair">
+                    <!-- 给血量传入 label，只显示纯数字 -->
                     <Status
                             max={playerData.maxHealth}
                             value={playerData.actualHealth ?? playerData.health}
                             color="var(--hotbar-health-color)"
                             alignRight={false}
                             icon="heart"
+                            label={Math.ceil(playerData.actualHealth ?? playerData.health).toString()}
                     />
+                    <!-- 给饱食度传入 label，只显示纯数字 -->
                     <Status
                             max={20}
                             value={playerData.food}
                             color="var(--hotbar-hunger-color)"
                             alignRight={true}
                             icon="food"
+                            label={Math.ceil(playerData.food).toString()}
                     />
                 </div>
             {/if}
@@ -169,7 +173,7 @@
         </div>
 
         <div class="hotbar-elements">
-            <div class="slider" style="left: {currentSlot * 45}px"></div>
+            <div class="slider" style="--slot: {currentSlot}"></div>
             <div class="slots" bind:this={slotsElement}>
                 <div class="slot"></div>
                 <div class="slot"></div>
@@ -204,35 +208,47 @@
         column-gap: 20px;
     }
 
-    /* 半透明物品栏 - 改为玻璃背景 */
-    .hotbar-elements {
+    .hotbar-elements,
+    .offhand-slot,
+    .item-name {
         background: transparent !important;
-        backdrop-filter: blur(16px) saturate(1.4) !important;
-        -webkit-backdrop-filter: blur(16px) saturate(1.4) !important;
+        backdrop-filter: blur(10px) saturate(1.25) !important;
+        -webkit-backdrop-filter: blur(10px) saturate(1.25) !important;
         border: 1px solid rgba(255, 255, 255, 0.08);
-        animation: glassPulse 4s ease-in-out infinite;
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15) !important;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18) !important;
         position: relative;
-        border-radius: 12px;
-        overflow: hidden;
         transition: box-shadow 0.3s;
     }
 
-    .hotbar-elements:hover {
-        box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25) !important;
+    .hotbar-elements:hover,
+    .offhand-slot:hover,
+    .item-name:hover {
+        box-shadow: 0 6px 24px rgba(0, 0, 0, 0.28) !important;
     }
 
-    @keyframes glassPulse {
-        0%, 100% {
-            backdrop-filter: blur(16px) saturate(1.4);
-            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
-            border-color: rgba(255, 255, 255, 0.08);
-        }
-        50% {
-            backdrop-filter: blur(20px) saturate(1.6);
-            box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
-            border-color: rgba(255, 255, 255, 0.15);
-        }
+    .hotbar-elements::after,
+    .offhand-slot::after,
+    .item-name::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        border: 1px solid rgba(255, 255, 255, 0.22);
+        background: rgba(255, 255, 255, 0.015);
+        opacity: 0;
+        pointer-events: none;
+        animation: glassBreath 4s ease-in-out infinite;
+        will-change: opacity;
+    }
+
+    @keyframes glassBreath {
+        0%, 100% { opacity: 0; }
+        50%      { opacity: 1; }
+    }
+
+    .hotbar-elements {
+        border-radius: 12px;
+        overflow: hidden;
     }
 
     .hotbar-elements .slider {
@@ -241,6 +257,9 @@
         width: 45px;
         position: absolute;
         border-radius: 12px;
+        transform: translateX(calc(var(--slot, 0) * 45px));
+        transition: transform 120ms cubic-bezier(0.22, 1, 0.36, 1);
+        will-change: transform;
     }
 
     .hotbar-elements .slots {
@@ -256,41 +275,19 @@
         height: 45px;
         width: 45px;
         border-radius: 12px;
-        background: transparent !important;
-        backdrop-filter: blur(16px) saturate(1.4) !important;
-        -webkit-backdrop-filter: blur(16px) saturate(1.4) !important;
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        animation: glassPulse 4s ease-in-out infinite;
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15) !important;
         position: absolute;
         bottom: 0;
         left: -64px;
-        transition: box-shadow 0.3s;
-    }
-
-    .offhand-slot:hover {
-        box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25) !important;
     }
 
     .item-name {
         color: var(--hotbar-text-color);
         margin: 0 auto 20px;
         font-weight: 500;
-        background: transparent !important;
-        backdrop-filter: blur(16px) saturate(1.4) !important;
-        -webkit-backdrop-filter: blur(16px) saturate(1.4) !important;
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        animation: glassPulse 4s ease-in-out infinite;
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15) !important;
         padding: 6px 8px;
         border-radius: 10px;
         width: max-content;
         text-shadow: 0 1px 4px rgba(0, 0, 0, 0.55);
-        transition: box-shadow 0.3s;
-    }
-
-    .item-name:hover {
-        box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25) !important;
     }
 
     .overlay-message {

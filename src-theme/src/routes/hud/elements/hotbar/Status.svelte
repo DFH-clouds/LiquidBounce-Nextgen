@@ -13,6 +13,7 @@
     $: percentage = Math.max(0, Math.min(100, (value / max) * 100));
     $: displayValue = Math.ceil(value);
     $: displayMax = Math.ceil(max);
+    $: fraction = Math.max(0, Math.min(100, (value / max) * 100));
 </script>
 
 <div class="progress" class:align-right={alignRight}>
@@ -33,38 +34,16 @@
     <div
             class:align-right={alignRight}
             class="progress-bar"
-            style="transform: scaleX({Math.max(0, Math.min(1, value / max))}); background-color: {color};"
+            style="--pct: {fraction}%; background-color: {color};"
     ></div>
 </div>
 
 <style lang="scss">
-
-  .label {
-    color: var(--clickgui-text-color);
-    position: absolute;
-    font-size: 12px;
-    font-weight: 500;
-    right: 6px;
-    top: 50%;
-    transform: translateY(-50%);
-    font-variant-numeric: tabular-nums;
-  }
-
-  .icon {
-    position: absolute;
-    left: 6px;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 14px;
-    height: 14px;
-    --themed-icon-size: 14px;
-    --themed-icon-color: var(--clickgui-text-color);
-  }
-
-    .progress {
-        position: relative;
-        border-radius: 8px;
-        background-color: var(--hud-panel-soft-background, rgba(255, 255, 255, 0.35));
+  .progress {
+    position: relative;
+    border-radius: 8px;
+    background-color: var(--hud-panel-soft-background, rgba(255, 255, 255, 0.35));
+    overflow: hidden;
 
     &.align-right {
       .label {
@@ -79,18 +58,39 @@
     }
   }
 
-    /* [Perf] width 动画 -> transform: scaleX：视觉完全一致，但只走合成层，不触发 layout */
-    .progress-bar {
+  .label {
+    color: var(--clickgui-text-color);
+    position: absolute;
+    font-size: 12px;
+    font-weight: 500;
+    right: 6px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-variant-numeric: tabular-nums;
+    z-index: 1;
+  }
+
+  .icon {
+    position: absolute;
+    left: 6px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 14px;
+    height: 14px;
+    --themed-icon-size: 14px;
+    --themed-icon-color: var(--clickgui-text-color);
+    z-index: 1;
+  }
+
+  .progress-bar {
     width: 100%;
-    transform-origin: left;
-    border-radius: 8px;
     height: 18px;
-    will-change: transform;
-    transition: transform 0.4s ease;
+    border-radius: 8px;
+    clip-path: inset(0 calc(100% - var(--pct)) 0 0 round 8px);
+    transition: clip-path 0.4s ease;
 
     &.align-right {
-      margin-left: auto;
-      transform-origin: right;
+      clip-path: inset(0 0 0 calc(100% - var(--pct)) round 8px);
     }
   }
 </style>

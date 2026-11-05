@@ -29,6 +29,8 @@ import net.minecraft.resources.Identifier
 import net.minecraft.world.entity.LivingEntity
 import net.minecraft.world.entity.player.Player
 import java.util.concurrent.CompletableFuture
+import kotlin.math.PI
+import kotlin.math.cos
 import kotlin.math.exp
 import kotlin.math.max
 import kotlin.math.sqrt
@@ -39,7 +41,7 @@ object ModuleTargetHud : ClientModule("TargetHUD", ModuleCategories.RENDER, alia
     private val range by float("Range", 6f, 2f..12f)
     private val posX by float("X", 490f, -500f..500f)
     private val posY by float("Y", 205f, -500f..500f)
-    private val textScale by float("TextScale", 0.38f, 0.2f..0.8f)
+    private val textScale by float("TextScale", 0.20f, 0.2f..0.5f)
     private val showHead by boolean("ShowHead", true)
 
     private val fontRenderer
@@ -64,6 +66,8 @@ object ModuleTargetHud : ClientModule("TargetHUD", ModuleCategories.RENDER, alia
         skinSetupCache.clear()
         skinMethodCache = null
         skinSampler = null
+        steveSetupCache = null
+        steveSetupLastTry = 0L
         super.onDisabled()
     }
 
@@ -119,6 +123,10 @@ object ModuleTargetHud : ClientModule("TargetHUD", ModuleCategories.RENDER, alia
     private var skinMethodCache: java.lang.reflect.Method? = null
     private var skinSampler: GpuSamplerRef? = null
     private val skinSetupCache = HashMap<java.util.UUID, Pair<Any?, Long>>()
+
+    // 史蒂夫默认头像的 TextureSetup 缓存：成功后永久保留，失败 10 秒后重试
+    private var steveSetupCache: TextureSetup? = null
+    private var steveSetupLastTry = 0L
 
     private fun invokeNoArg(obj: Any, names: List<String>): Any? {
         for (n in names) {
@@ -215,7 +223,6 @@ object ModuleTargetHud : ClientModule("TargetHUD", ModuleCategories.RENDER, alia
         } catch (_: Throwable) {}
     }
 
-    // 每个玩家的 TextureSetup 缓存：成功永久缓存，失败 10 秒后重试
     private fun cachedSkinSetup(t: Player): Any? {
         val uuid = t.uuid
         val now = System.currentTimeMillis()
@@ -224,6 +231,45 @@ object ModuleTargetHud : ClientModule("TargetHUD", ModuleCategories.RENDER, alia
         val setup = resolveSkinSetup(t.gameProfile)
         skinSetupCache[uuid] = setup to now
         return setup
+    }
+
+    /**
+     * 默认史蒂夫头像的 TextureSetup。
+     * 成功永久缓存；失败 10 秒后重试（避免短时间反复反射）。
+     */
+    private fun getSteveSetup(): TextureSetup? {
+        steveSetupCache?.let { return it }
+        val now = System.currentTimeMillis()
+        if (now - steveSetupLastTry < 10_000) return null
+        steveSetupLastTry = now
+        return try {
+            val idf = Identifier.fromNamespaceAndPath("minecraft", "textures/entity/player/wide/steve.png")
+            val tex = runCatching { mc.textureManager.getTexture(idf) }.getOrNull()
+            if (tex == null || tex.javaClass.simpleName.contains("Missing", ignoreCase = true)) {
+                null
+            } else {
+                val view = invokeNoArg(tex, listOf("textureView", "getTextureView"))
+                if (view == null) {
+                    logSkin("steve tex no textureView")
+                    null
+                } else {
+                    if (skinSampler == null) {
+                        skinSampler = GpuSamplerRef(RenderSystem.getSamplerCache()
+                            .getClampToEdge(FilterMode.NEAREST))
+                    }
+                    val setup = TextureSetup::class.java.methods.firstOrNull {
+                        it.name == "singleTexture" && it.parameterCount == 2
+                    }?.let {
+                        runCatching { it.invoke(null, view, skinSampler?.ref) }.getOrNull() as? TextureSetup
+                    }
+                    if (setup != null) steveSetupCache = setup
+                    setup
+                }
+            }
+        } catch (e: Throwable) {
+            logSkin("steve setup failed", e as? Exception)
+            null
+        }
     }
 
     private class GpuSamplerRef(val ref: Any)
@@ -252,35 +298,40 @@ object ModuleTargetHud : ClientModule("TargetHUD", ModuleCategories.RENDER, alia
         drawCircle(x + w - r, cy, r, 0f, Float2IntFunction { argb(alpha, c2) })
     }
 
-    // 圆形裁剪头像
     private fun GuiGraphicsExtractor.drawHeadCircle(setup: TextureSetup, cx: Float, cy: Float, r: Float) {
-        val strips = 24
+        val strips = 128
         val u0 = 8f / 64f
         val v0 = 8f / 64f
         val span = 8f / 64f
+        val uCenter = u0 + span * 0.5f
+        val vCenter = v0 + span * 0.5f
+        val uRadius = span * 0.5f
+        val vRadius = span * 0.5f
         for (i in 0 until strips) {
-            val dx = ((i + 0.5f) / strips) * 2f - 1f
-            val chord = sqrt((1f - dx * dx).coerceAtLeast(0f)) * r
-            if (chord <= 0.2f) continue
             val x1 = cx - r + 2f * r * i / strips
             val x2 = cx - r + 2f * r * (i + 1) / strips
+            val dx1 = (x1 - cx) / r
+            val dx2 = (x2 - cx) / r
+            val chord1 = sqrt((1f - dx1 * dx1).coerceAtLeast(0f)) * r
+            val chord2 = sqrt((1f - dx2 * dx2).coerceAtLeast(0f)) * r
+            val chord = (chord1 + chord2) * 0.5f
+            if (chord <= 0.01f) continue
             val u1 = u0 + span * i / strips
             val u2 = u0 + span * (i + 1) / strips
-            val half = (chord / r) * 0.5f
-            drawTexQuad(setup, x1, cy - chord, x2, cy + chord,
-                u1, v0 + span * (0.5f - half), u2, v0 + span * (0.5f + half))
+            val vLo = vCenter - vRadius * (chord / r)
+            val vHi = vCenter + vRadius * (chord / r)
+            drawTexQuad(setup, x1, cy - chord, x2, cy + chord, u1, vLo, u2, vHi)
         }
     }
 
-    // 头像（皮肤失败回退彩球）
     private fun GuiGraphicsExtractor.drawHead(t: LivingEntity, hx: Float, hy: Float, size: Float,
                                               timeSec: Double, openAnim: Float) {
         var drew = false
         if (t is Player) {
             try {
-                val setup = cachedSkinSetup(t)
+                val setup = (cachedSkinSetup(t) as? TextureSetup) ?: getSteveSetup()
                 if (setup != null) {
-                    drawHeadCircle(setup as TextureSetup, hx + size / 2f, hy + size / 2f, size / 2f)
+                    drawHeadCircle(setup, hx + size / 2f, hy + size / 2f, size / 2f)
                     drew = true
                 }
             } catch (e: Exception) {
@@ -342,7 +393,6 @@ object ModuleTargetHud : ClientModule("TargetHUD", ModuleCategories.RENDER, alia
         val x2 = posX + width; val y2 = posY + height
         val alpha = (openAnim * 255).toInt().coerceIn(0, 255)
 
-        // 血量/吸收占比
         val maxTotal = t.maxHealth + animatedAbsorption
         val hpPct = if (maxTotal > 0f) (animatedHealth / maxTotal).coerceIn(0f, 1f) else 0f
         val absPct = if (maxTotal > 0f) (animatedAbsorption / maxTotal).coerceIn(0f, 1f) else 0f
@@ -354,12 +404,23 @@ object ModuleTargetHud : ClientModule("TargetHUD", ModuleCategories.RENDER, alia
                 scale(s, s)
                 translate(-(posX + width / 2f), -(posY + height / 2f))
 
-                val oc = palette(timeSec / 5.0)
-                drawRoundedRect(x1, y1, x2, y2, radius, Color4b(242, 246, 255, (72 * openAnim).toInt()))
-                drawRoundedRect(x1, y1, x2, y2, radius, Color4b(0, 0, 0, 0),
-                    Color4b(oc.first, oc.second, oc.third, (70 * openAnim).toInt()), 1f)
+                val pulse = (0.5f - 0.5f * cos(timeSec * PI / 2.0)).toFloat()
 
-                // 头像
+                val shadowE = 3f
+                val shadowA = ((14 + 12 * pulse) * openAnim).toInt().coerceIn(0, 255)
+                drawRoundedRect(
+                    x1 - shadowE, y1 - shadowE, x2 + shadowE, y2 + shadowE,
+                    radius + shadowE,
+                    Color4b(0, 0, 0, shadowA)
+                )
+
+                val glassA = ((60 + 22 * pulse) * openAnim).toInt().coerceIn(0, 255)
+                drawRoundedRect(x1, y1, x2, y2, radius, Color4b(242, 246, 255, glassA))
+
+                val borderA = ((8 + 16 * pulse) * openAnim).toInt().coerceIn(0, 255)
+                drawRoundedRect(x1, y1, x2, y2, radius, Color4b(0, 0, 0, 0),
+                    Color4b(255, 255, 255, borderA), 1f)
+
                 val cx1 = x1 + pad + headBlock
                 if (showHead) {
                     drawHead(t, x1 + pad, y1 + pad, headSize, timeSec, openAnim)
@@ -376,6 +437,7 @@ object ModuleTargetHud : ClientModule("TargetHUD", ModuleCategories.RENDER, alia
                 val barW = width - pad - headBlock - pad
                 val barY = y1 + pad + headerH + rowGap
 
+                // 进度条底槽
                 drawRoundedRect(barX, barY, barX + barW, barY + barH, barH / 2f,
                     Color4b(20, 24, 35, (35 * openAnim).toInt()),
                     Color4b(90, 96, 110, (120 * openAnim).toInt()), 1f)
@@ -394,27 +456,6 @@ object ModuleTargetHud : ClientModule("TargetHUD", ModuleCategories.RENDER, alia
                     val absW = barW * absPct
                     drawGradientBar(absX - inset, fillY, absW, fillH,
                         Triple(255, 200, 60), Triple(255, 170, 30), alpha)
-                }
-
-                val hpScale = textScale * 0.8f
-                val hpText = "%.1f".format(animatedHealth)
-                val hpTextP = fontRenderer.process(Component.literal(hpText))
-                val hpTextW = fontRenderer.getStringWidth(hpTextP) * hpScale
-                var absTextW = 0f
-                val absTextP = if (animatedAbsorption > 0.5f) {
-                    val p = fontRenderer.process(colored("+${animatedAbsorption.toInt()}",
-                        0xFFCC44))
-                    absTextW = fontRenderer.getStringWidth(p) * hpScale
-                    p
-                } else null
-                val textX = barX + barW / 2f - (hpTextW + absTextW) / 2f
-                fontRenderer.draw(hpTextP) {
-                    x = textX; y = barY + barH / 2f - 3.5f; scale = hpScale; shadow = true
-                }
-                if (absTextP != null) {
-                    fontRenderer.draw(absTextP) {
-                        x = textX + hpTextW; y = barY + barH / 2f - 3.5f; scale = hpScale; shadow = true
-                    }
                 }
             }
         }
