@@ -1,3 +1,4 @@
+
 <script lang="ts">
     import {
         deleteScreen,
@@ -113,46 +114,57 @@
     });
 </script>
 
+<!-- 必须在每个页面独立声明，否则切换页面后滤镜失效 -->
+<svg width="0" height="0" aria-hidden="true" style="position: absolute;">
+  <filter id="liquid-lens">
+    <feTurbulence type="fractalNoise" baseFrequency="0.01" numOctaves="2" result="noise" />
+    <feDisplacementMap in="SourceGraphic" in2="noise" scale="40" xChannelSelector="R" yChannelSelector="G" />
+  </filter>
+</svg>
+
 <DirectLoginModal bind:visible={directLoginModalVisible}/>
 <AddAccountModal bind:visible={addAccountModalVisible}/>
 <Menu>
-    <OptionBar>
-        <Search on:search={handleSearch}/>
-        <SwitchSetting title="Premium Only" bind:value={premiumOnly}/>
-        <SwitchSetting title="Favorites Only" bind:value={favoritesOnly}/>
-        <MultiSelect title="Account Type" options={["Mojang", "TheAltening"]} bind:values={accountTypes}/>
-    </OptionBar>
+    <!-- 新增包裹容器，与单人界面对齐 -->
+    <div class="compact-layout">
+        <OptionBar>
+            <Search on:search={handleSearch}/>
+            <SwitchSetting title="Premium Only" bind:value={premiumOnly}/>
+            <SwitchSetting title="Favorites Only" bind:value={favoritesOnly}/>
+            <MultiSelect title="Account Type" options={["Mojang", "TheAltening"]} bind:values={accountTypes}/>
+        </OptionBar>
 
-    <MenuList sortable={accounts.length === renderedAccounts.length} elementCount={accounts.length}
-              on:sort={handleAccountSort}>
-        {#key accounts}
-            {#each renderedAccounts as account}
-                <MenuListItem
-                        image={account.avatar}
-                        title={account.username}
-                        favorite={account.favorite}
-                        on:dblclick={() => loginToAccount(account.id)}>
-                    <svelte:fragment slot="subtitle">
-                        <pre class="uuid">{account.uuid}</pre>
-                    </svelte:fragment>
+        <MenuList sortable={accounts.length === renderedAccounts.length} elementCount={accounts.length}
+                  on:sort={handleAccountSort}>
+            {#key accounts}
+                {#each renderedAccounts as account}
+                    <MenuListItem
+                            image={account.avatar}
+                            title={account.username}
+                            favorite={account.favorite}
+                            on:dblclick={() => loginToAccount(account.id)}>
+                        <svelte:fragment slot="subtitle">
+                            <pre class="uuid">{account.uuid}</pre>
+                        </svelte:fragment>
 
-                    <svelte:fragment slot="tag">
-                        <MenuListItemTag text={account.type}/>
-                    </svelte:fragment>
+                        <svelte:fragment slot="tag">
+                            <MenuListItemTag text={account.type}/>
+                        </svelte:fragment>
 
-                    <svelte:fragment slot="active-visible">
-                        <MenuListItemButton title="Delete" icon="trash" on:click={() => removeAccount(account.id)}/>
-                        <MenuListItemButton title="Favorite" icon={account.favorite ? "favorite-filled" : "favorite" }
-                                            on:click={() => toggleFavorite(account.id, !account.favorite)}/>
-                    </svelte:fragment>
+                        <svelte:fragment slot="active-visible">
+                            <MenuListItemButton title="Delete" icon="trash" on:click={() => removeAccount(account.id)}/>
+                            <MenuListItemButton title="Favorite" icon={account.favorite ? "favorite-filled" : "favorite" }
+                                                on:click={() => toggleFavorite(account.id, !account.favorite)}/>
+                        </svelte:fragment>
 
-                    <svelte:fragment slot="always-visible">
-                        <MenuListItemButton title="Login" icon="play" on:click={() => loginToAccount(account.id)}/>
-                    </svelte:fragment>
-                </MenuListItem>
-            {/each}
-        {/key}
-    </MenuList>
+                        <svelte:fragment slot="always-visible">
+                            <MenuListItemButton title="Login" icon="play" on:click={() => loginToAccount(account.id)}/>
+                        </svelte:fragment>
+                    </MenuListItem>
+                {/each}
+            {/key}
+        </MenuList>
+    </div>
 
     <div class="bottom-buttons">
         <button class="circle-button" on:click={() => addAccountModalVisible = true}>
@@ -187,6 +199,35 @@
         font-family: monospace;
     }
 
+    .compact-layout {
+        max-width: 1600px;
+        width: 100%;
+        margin: 0 auto;
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
+
+        background: rgba(255, 255, 255, 0.03);
+
+        backdrop-filter: blur(8px) saturate(1.8);
+        -webkit-backdrop-filter: blur(8px) saturate(1.8);
+        backdrop-filter: blur(8px) saturate(1.8) url(#liquid-lens);
+
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 20px;
+        box-shadow:
+            0 16px 40px rgba(0, 0, 0, 0.4),
+            -2px 0 8px rgba(255, 100, 100, 0.15),
+            2px 0 8px rgba(100, 200, 255, 0.15),
+            inset 0 1.5px 2px rgba(255, 255, 255, 0.8),
+            inset 0 -2px 4px rgba(255, 255, 255, 0.1),
+            inset 0 0 0 1px rgba(0, 0, 0, 0.1);
+        padding: 15px;
+        margin-top: 10px;
+        margin-bottom: 10px;
+    }
+
     .bottom-buttons {
         position: absolute;
         bottom: clamp(15px, 4vh, 35px);
@@ -202,31 +243,51 @@
     .circle-button {
         width: clamp(70px, 11vw, 95px);
         height: clamp(70px, 11vw, 95px);
-        border-radius: 50%;
+        border-radius: 42% / 42%;
+        position: relative;
+        overflow: hidden;
+
         background: rgba(255, 255, 255, 0.08);
-        border: 2px solid rgba(255, 255, 255, 0.15);
+        backdrop-filter: blur(8px) saturate(1.8);
+        -webkit-backdrop-filter: blur(8px) saturate(1.8);
+        backdrop-filter: blur(8px) saturate(1.8) url(#liquid-lens);
+
+        border: 1px solid rgba(255, 255, 255, 0.4);
+        box-shadow:
+            0 16px 40px rgba(0, 0, 0, 0.5),
+            -2px 0 8px rgba(255, 100, 100, 0.2),
+            2px 0 8px rgba(100, 200, 255, 0.2),
+            inset 0 1.5px 2px rgba(255, 255, 255, 1),
+            inset 0 -2px 4px rgba(255, 255, 255, 0.2),
+            inset 0 0 0 1px rgba(0, 0, 0, 0.1);
+
         color: white;
         cursor: pointer;
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        transition: all 0.25s ease;
+        transition: all 0.4s cubic-bezier(0.25, 1, 0.5, 1);
         font-family: inherit;
         padding: 0;
         outline: none;
-        backdrop-filter: blur(2px);
         flex-shrink: 0;
 
         &:hover:not(:disabled) {
-            background: rgba(255, 255, 255, 0.2);
-            border-color: rgba(255, 255, 255, 0.4);
-            transform: scale(1.06);
-            box-shadow: 0 0 25px rgba(255, 255, 255, 0.15);
+            background: rgba(255, 255, 255, 0.12);
+            border-color: rgba(255, 255, 255, 0.6);
+            transform: translateY(-3px) scale(1.02);
+            box-shadow:
+                0 20px 50px rgba(0, 0, 0, 0.6),
+                -3px 0 12px rgba(255, 100, 100, 0.3),
+                3px 0 12px rgba(100, 200, 255, 0.3),
+                inset 0 2px 3px rgba(255, 255, 255, 1),
+                inset 0 -2px 4px rgba(255, 255, 255, 0.3),
+                inset 0 0 0 1px rgba(0, 0, 0, 0.1);
         }
 
         &:active:not(:disabled) {
-            transform: scale(0.95);
+            transform: translateY(0) scale(0.96);
         }
 
         &:disabled {
@@ -237,18 +298,22 @@
         .icon-img {
             width: clamp(22px, 4vw, 28px);
             height: clamp(22px, 4vw, 28px);
-            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4));
+            filter: drop-shadow(0 2px 6px rgba(0,0,0,0.5));
             display: block;
+            position: relative;
+            z-index: 2;
         }
 
         .label {
             font-size: clamp(10px, 1.8vw, 13px);
-            font-weight: 600;
+            font-weight: 700;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
+            letter-spacing: 1px;
             margin-top: 2px;
-            text-shadow: 0 2px 10px rgba(0,0,0,0.6);
+            text-shadow: 0 1px 4px rgba(0,0,0,0.8);
             white-space: nowrap;
+            position: relative;
+            z-index: 2;
         }
     }
 

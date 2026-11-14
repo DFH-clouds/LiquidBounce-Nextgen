@@ -1,3 +1,7 @@
+<!--
+    苹果 Liquid Glass 风格 ArrayList。
+    每个小条目都是一个独立的液态高光透镜。
+-->
 <script lang="ts">
     import { onMount, tick } from "svelte";
     import type { Module } from "../../../integration/types";
@@ -12,16 +16,10 @@
 
     const cSettings = settings as HudArrayListSettings;
 
-    // 颜色配置
-    // 蓝: rgb(88, 204, 250)
-    // 粉: rgb(245, 150, 200)
-    // 紫: rgb(123, 44, 191)
-
     const tagColor = cSettings.tagColor ?? 'rgba(255,255,255,0.85)';
     const fontSize = cSettings.fontSize ?? 14;
     const fontFamily = 'Inter, system-ui, -apple-system, sans-serif';
 
-    // 循环周期（毫秒）：一个完整颜色循环的时间
     const CYCLE_MS = 6000;
 
     let enabledModules: Module[] = [];
@@ -70,12 +68,17 @@
     function moduleDelay(index: number, total: number): string {
         if (total <= 1) return "0s";
         const baseProgress = index / (total - 1);
-        // 列表跨度占相位的 0.66（蓝→粉→紫）
         const phase = baseProgress * 0.66;
-        // animation-delay 为负值，表示从动画的该相位立即开始
         return `-${phase * (CYCLE_MS / 1000)}s`;
     }
 </script>
+
+<svg width="0" height="0" aria-hidden="true" style="position: absolute;">
+  <filter id="liquid-lens">
+    <feTurbulence type="fractalNoise" baseFrequency="0.01" numOctaves="2" result="noise" />
+    <feDisplacementMap in="SourceGraphic" in2="noise" scale="40" xChannelSelector="R" yChannelSelector="G" />
+  </filter>
+</svg>
 
 <div class="arraylist">
     {#each enabledModules as { name, tag }, index (name)}
@@ -109,38 +112,51 @@
     display: flex;
     flex-direction: column;
     align-items: flex-end;
+    gap: 4px;
   }
 
   .module {
-    background: rgba(255, 255, 255, 0.18);
-    /* [Perf] blur(12px)->blur(6px)：小条目 6px 已足够磨砂，blur 成本≈半径² */
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
-    padding: 2px 4px;
+    position: relative;
+    background: rgba(255, 255, 255, 0.05);
+
+    backdrop-filter: blur(12px) saturate(1.8);
+    -webkit-backdrop-filter: blur(12px) saturate(1.8);
+    backdrop-filter: blur(12px) saturate(1.8) url(#liquid-lens);
+
+    padding: 3px 8px;
     border-radius: 8px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    box-shadow:
+        0 8px 24px rgba(0, 0, 0, 0.3),
+        -1px 0 5px rgba(255, 100, 100, 0.15),
+        1px 0 5px rgba(100, 200, 255, 0.15),
+        inset 0 1px 1.5px rgba(255, 255, 255, 0.8),
+        inset 0 -1px 1px rgba(255, 255, 255, 0.1),
+        inset 0 0 0 1px rgba(0, 0, 0, 0.05);
+
     width: max-content;
     font-weight: 500;
-    text-shadow: none;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
   }
 
   .name {
     font-weight: 700;
-    color: rgb(88, 204, 250); /* fallback / 初始色 */
+    color: rgb(88, 204, 250);
     animation: colorCycle 6s linear infinite;
     animation-delay: var(--delay, 0s);
+    filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.3));
   }
 
   @keyframes colorCycle {
-    0%    { color: rgb(88, 204, 250); }   /* 蓝 */
-    33.3% { color: rgb(245, 150, 200); }  /* 粉 */
-    66.6% { color: rgb(123, 44, 191); }   /* 紫 */
-    100%  { color: rgb(88, 204, 250); }   /* 回到蓝，无缝循环 */
+    0%    { color: rgb(88, 204, 250); }
+    33.3% { color: rgb(245, 150, 200); }
+    66.6% { color: rgb(123, 44, 191); }
+    100%  { color: rgb(88, 204, 250); }
   }
 
   .tag {
     margin-left: 4px;
     font-weight: 400;
-    text-shadow: 0 0 8px rgba(0, 0, 0, 0.4);
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
   }
 </style>

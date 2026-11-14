@@ -1,3 +1,4 @@
+
 <script lang="ts">
     import MainButton from "./buttons/MainButton.svelte";
     import { onDestroy } from "svelte";
@@ -71,6 +72,16 @@
 
     updateTime();
 </script>
+
+<!-- 苹果液态玻璃：全局折射滤镜 (SVG Displacement Map) -->
+<svg width="0" height="0" aria-hidden="true" style="position: absolute;">
+  <filter id="liquid-lens">
+    <!-- 生成噪点用于位移 -->
+    <feTurbulence type="fractalNoise" baseFrequency="0.01" numOctaves="2" result="noise" />
+    <!-- 将噪点作为位移图，扭曲背景 -->
+    <feDisplacementMap in="SourceGraphic" in2="noise" scale="40" xChannelSelector="R" yChannelSelector="G" />
+  </filter>
+</svg>
 
 <!-- 背景图片（无模糊遮罩） -->
 <div class="bg-image"></div>
@@ -210,19 +221,39 @@
         transform: translateZ(0);
     }
 
-    /* 移除了 .bg-overlay，所以背景清晰无模糊 */
-
-    /* 覆盖 IconTextButton 样式：保留半透明白色，无滑动 */
+    /* 覆盖 IconTextButton 样式：应用液态玻璃 */
     :global(.icon-text-button) {
-        background-color: rgba(255, 255, 255, 0.35) !important;
+        background-color: rgba(255, 255, 255, 0.03) !important;
         background-image: none !important;
         background-size: auto !important;
         background-position: 0% 0% !important;
-        transition: background-position 0s !important;
-        backdrop-filter: none !important;
+        transition: all 0.4s ease !important;
+
+        /* 降级方案 */
+        backdrop-filter: blur(8px) saturate(1.8) !important;
+        -webkit-backdrop-filter: blur(8px) saturate(1.8) !important;
+        /* 真实折射 */
+        backdrop-filter: blur(8px) saturate(1.8) url(#liquid-lens) !important;
+
+        border: 1px solid rgba(255, 255, 255, 0.3) !important;
+        box-shadow:
+            0 12px 32px rgba(0, 0, 0, 0.4),
+            -2px 0 8px rgba(255, 100, 100, 0.15),
+            2px 0 8px rgba(100, 200, 255, 0.15),
+            inset 0 1.5px 1.5px rgba(255, 255, 255, 0.9),
+            inset 0 -1px 1px rgba(255, 255, 255, 0.2) !important;
     }
+
     :global(.icon-text-button:hover) {
-        background-color: rgba(255, 255, 255, 0.45) !important;
+        background-color: rgba(255, 255, 255, 0.08) !important;
         background-position: 0% 0% !important;
+        border-color: rgba(255, 255, 255, 0.5) !important;
+        transform: translateY(-2px);
+        box-shadow:
+            0 16px 40px rgba(0, 0, 0, 0.5),
+            -3px 0 12px rgba(255, 100, 100, 0.25),
+            3px 0 12px rgba(100, 200, 255, 0.25),
+            inset 0 2px 3px rgba(255, 255, 255, 1),
+            inset 0 -1px 2px rgba(255, 255, 255, 0.3) !important;
     }
 </style>

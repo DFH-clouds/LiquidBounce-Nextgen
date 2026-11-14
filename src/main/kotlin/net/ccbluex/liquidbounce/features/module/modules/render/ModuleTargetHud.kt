@@ -1,8 +1,17 @@
+/*
+ * 1. 重构自定义图片加载逻辑，支持打包内置和外部热替换：
+ * 2. 新增图像调整参数（ImageScale, OffsetX, OffsetY）：
+ * 3. 图片渲染优化
+ * 4. 兜底策略
+ * =============================================================================
+ */
 package net.ccbluex.liquidbounce.features.module.modules.render
 
-import com.mojang.authlib.GameProfile
+import com.mojang.blaze3d.platform.NativeImage
 import com.mojang.blaze3d.systems.RenderSystem
 import com.mojang.blaze3d.textures.FilterMode
+import com.mojang.blaze3d.textures.GpuSampler
+import com.mojang.blaze3d.textures.GpuTextureView
 import it.unimi.dsi.fastutil.floats.Float2IntFunction
 import net.ccbluex.liquidbounce.LiquidBounce
 import net.ccbluex.liquidbounce.event.events.GameTickEvent
@@ -21,21 +30,21 @@ import net.ccbluex.liquidbounce.utils.client.mc
 import net.ccbluex.liquidbounce.utils.entity.RenderedEntities
 import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.gui.render.TextureSetup
+import net.minecraft.client.renderer.texture.DynamicTexture
 import net.minecraft.network.chat.Component
 import net.minecraft.network.chat.MutableComponent
-import net.minecraft.network.chat.Style
 import net.minecraft.network.chat.TextColor
 import net.minecraft.resources.Identifier
 import net.minecraft.world.entity.LivingEntity
-import net.minecraft.world.entity.player.Player
-import java.util.concurrent.CompletableFuture
+import java.io.File
+import java.nio.file.Files
+import java.util.function.Supplier
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.exp
 import kotlin.math.max
 import kotlin.math.sqrt
 
-//一个targethud 一个半成品 26/10/18 By花辞树  //已完工 26/10/31
 object ModuleTargetHud : ClientModule("TargetHUD", ModuleCategories.RENDER, aliases = listOf("TargetHUD")) {
 
     private val range by float("Range", 6f, 2f..12f)
@@ -43,6 +52,10 @@ object ModuleTargetHud : ClientModule("TargetHUD", ModuleCategories.RENDER, alia
     private val posY by float("Y", 205f, -500f..500f)
     private val textScale by float("TextScale", 0.20f, 0.2f..0.5f)
     private val showHead by boolean("ShowHead", true)
+
+    private val imageScale by float("ImageScale", 1.0f, 0.5f..3.0f)
+    private val offsetX by float("OffsetX", 0.0f, -1.0f..1.0f)
+    private val offsetY by float("OffsetY", 0.0f, -1.0f..1.0f)
 
     private val fontRenderer
         get() = FontManager.fontFace("Inter Bold")?.renderer ?: FontManager.FONT_RENDERER
@@ -53,22 +66,66 @@ object ModuleTargetHud : ClientModule("TargetHUD", ModuleCategories.RENDER, alia
     private var animatedAbsorption = 0f
     private var openAnim = 0f
     private var lastFrameMs = 0L
-    private var skinLogCooldown = 0L
+
+    private var customAvatarId: Identifier? = null
+    private var customSampler: GpuSampler? = null
+    private var loadFailed = false
 
     override fun onEnabled() {
         RenderedEntities.subscribe(this)
+        loadCustomAvatar()
         super.onEnabled()
     }
 
     override fun onDisabled() {
         RenderedEntities.unsubscribe(this)
         target = null
-        skinSetupCache.clear()
-        skinMethodCache = null
-        skinSampler = null
-        steveSetupCache = null
-        steveSetupLastTry = 0L
+        customAvatarId = null
+        customSampler = null
+        loadFailed = false
         super.onDisabled()
+    }
+
+    private fun loadCustomAvatar() {
+        if (customAvatarId != null || loadFailed) return
+        try {
+            var image: NativeImage? = null
+
+            val externalFile = File(System.getProperty("user.dir"), "avatar.png")
+            if (externalFile.exists()) {
+                image = NativeImage.read(Files.newInputStream(externalFile.toPath()))
+                LiquidBounce.logger.info("[TargetHUD] 加载外部头像: ${externalFile.absolutePath}")
+            }
+
+            if (image == null) {
+                val id = Identifier.fromNamespaceAndPath("liquidbounce", "textures/gui/avatar.png")
+                val resource = mc.resourceManager.getResource(id).orElse(null)
+                if (resource != null) {
+                    resource.open().use { stream ->
+                        image = NativeImage.read(stream)
+                    }
+                    LiquidBounce.logger.info("[TargetHUD] 加载内置头像资源: $id")
+                }
+            }
+
+            if (image != null) {
+                val id = Identifier.fromNamespaceAndPath("liquidbounce", "custom_avatar")
+                val finalImage = image
+
+                mc.execute {
+                    val dynamicTexture = DynamicTexture(Supplier { id.toString() }, finalImage)
+                    mc.textureManager.register(id, dynamicTexture)
+                    customAvatarId = id
+                    customSampler = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.LINEAR)
+                }
+            } else {
+                LiquidBounce.logger.warn("[TargetHUD] 未找到 avatar.png（外部和内部都没有），将使用代码兜底绘制。")
+                loadFailed = true
+            }
+        } catch (e: Exception) {
+            LiquidBounce.logger.error("[TargetHUD] 加载头像失败", e)
+            loadFailed = true
+        }
     }
 
     @Suppress("unused")
@@ -112,168 +169,6 @@ object ModuleTargetHud : ClientModule("TargetHUD", ModuleCategories.RENDER, alia
     private fun colored(text: String, rgb: Int): MutableComponent =
         Component.literal(text).withStyle { it.withColor(TextColor.fromRgb(rgb)) }
 
-    private fun logSkin(msg: String, e: Exception? = null) {
-        val now = System.currentTimeMillis()
-        if (now - skinLogCooldown < 5000) return
-        skinLogCooldown = now
-        if (e != null) LiquidBounce.logger.warn("[TargetHud] $msg", e)
-        else LiquidBounce.logger.warn("[TargetHud] $msg")
-    }
-
-    private var skinMethodCache: java.lang.reflect.Method? = null
-    private var skinSampler: GpuSamplerRef? = null
-    private val skinSetupCache = HashMap<java.util.UUID, Pair<Any?, Long>>()
-
-    // 史蒂夫默认头像的 TextureSetup 缓存：成功后永久保留，失败 10 秒后重试
-    private var steveSetupCache: TextureSetup? = null
-    private var steveSetupLastTry = 0L
-
-    private fun invokeNoArg(obj: Any, names: List<String>): Any? {
-        for (n in names) {
-            val m = obj.javaClass.methods.firstOrNull { it.name == n && it.parameterCount == 0 } ?: continue
-            return runCatching { m.invoke(obj) }.getOrNull()
-        }
-        return null
-    }
-
-    /**
-     * 完整皮肤解析链（每个玩家只做一次）
-     */
-    private fun resolveSkinSetup(profile: GameProfile): Any? {
-        val sm = mc.skinManager
-        val method = skinMethodCache ?: sm.javaClass.methods.firstOrNull {
-            it.parameterCount == 1 && it.parameterTypes[0] == GameProfile::class.java
-        }?.also { skinMethodCache = it }
-        if (method == null) {
-            logSkin("no GameProfile methods on SkinManager (${sm.javaClass.name})")
-            return null
-        }
-        val raw = runCatching { method.invoke(sm, profile) }.getOrNull() ?: return null
-        var resolved: Any? = when (raw) {
-            is CompletableFuture<*> -> if (raw.isDone) runCatching { raw.getNow(null) }.getOrNull() else null
-            else -> raw
-        }
-        if (resolved is java.util.Optional<*>) resolved = resolved.orElse(null)
-        if (resolved == null) return null
-
-        val body = invokeNoArg(resolved, listOf("body", "texture"))
-        if (body == null) {
-            logSkin("skin=${resolved.javaClass.name} methods=" + resolved.javaClass.methods
-                .filter { it.parameterCount == 0 }
-                .joinToString(",") { "${it.name}:${it.returnType.name}" })
-            return null
-        }
-        var texObj: Any? = null
-        var triedIds = StringBuilder()
-        for (name in listOf("id", "texturePath")) {
-            var idf = invokeNoArg(body, listOf(name)) as? Identifier ?: continue
-            if (!idf.path.startsWith("textures/")) {
-                idf = Identifier.fromNamespaceAndPath(idf.namespace, "textures/" + idf.path)
-            }
-            if (triedIds.isNotEmpty()) triedIds.append(", ")
-            triedIds.append(idf.toString())
-            val tex = runCatching { mc.textureManager.getTexture(idf) }.getOrNull()
-            if (tex == null || tex.javaClass.simpleName.contains("Missing", ignoreCase = true)) continue
-            if (body.javaClass.simpleName.contains("Resource")) {
-                val exists = runCatching { mc.resourceManager.getResource(idf).isPresent }.getOrDefault(false)
-                if (!exists) continue
-            }
-            texObj = tex
-            break
-        }
-        if (texObj == null) {
-            logSkin("body=${body.javaClass.name} tried=[$triedIds] 未找到可用纹理")
-            dumpSkinTextureKeys()
-            return null
-        }
-        val view = invokeNoArg(texObj, listOf("textureView", "getTextureView"))
-        if (view == null) {
-            logSkin("tex=${texObj.javaClass.name} methods=" + texObj.javaClass.methods
-                .filter { it.parameterCount == 0 }
-                .joinToString(",") { "${it.name}:${it.returnType.name}" })
-            return null
-        }
-        if (skinSampler == null) {
-            skinSampler = GpuSamplerRef(RenderSystem.getSamplerCache()
-                .getClampToEdge(FilterMode.NEAREST))
-        }
-        val setup = TextureSetup::class.java.methods.firstOrNull {
-            it.name == "singleTexture" && it.parameterCount == 2
-        }?.let {
-            runCatching { it.invoke(null, view, skinSampler?.ref) }.getOrNull()
-        }
-        if (setup == null) logSkin("TextureSetup.singleTexture not found")
-        return setup
-    }
-    //一个诊断小工具
-    private fun dumpSkinTextureKeys() {
-        try {
-            val tm = mc.textureManager
-            val fields = tm.javaClass.fields.toList() +
-                tm.javaClass.declaredFields.onEach { it.isAccessible = true }
-            for (f in fields) {
-                if (!Map::class.java.isAssignableFrom(f.type)) continue
-                val map = f.get(tm) as? Map<*, *> ?: continue
-                val keys = map.keys.mapNotNull { it?.toString() }
-                    .filter { it.contains("player", true) || it.contains("skin", true) }
-                if (keys.isNotEmpty()) {
-                    logSkin("texman.${f.name} [${keys.size}]: ${keys.take(25)}")
-                }
-            }
-        } catch (_: Throwable) {}
-    }
-
-    private fun cachedSkinSetup(t: Player): Any? {
-        val uuid = t.uuid
-        val now = System.currentTimeMillis()
-        val hit = skinSetupCache[uuid]
-        if (hit != null && (hit.first != null || now - hit.second < 10_000)) return hit.first
-        val setup = resolveSkinSetup(t.gameProfile)
-        skinSetupCache[uuid] = setup to now
-        return setup
-    }
-
-    /**
-     * 默认史蒂夫头像的 TextureSetup。
-     * 成功永久缓存；失败 10 秒后重试（避免短时间反复反射）。
-     */
-    private fun getSteveSetup(): TextureSetup? {
-        steveSetupCache?.let { return it }
-        val now = System.currentTimeMillis()
-        if (now - steveSetupLastTry < 10_000) return null
-        steveSetupLastTry = now
-        return try {
-            val idf = Identifier.fromNamespaceAndPath("minecraft", "textures/entity/player/wide/steve.png")
-            val tex = runCatching { mc.textureManager.getTexture(idf) }.getOrNull()
-            if (tex == null || tex.javaClass.simpleName.contains("Missing", ignoreCase = true)) {
-                null
-            } else {
-                val view = invokeNoArg(tex, listOf("textureView", "getTextureView"))
-                if (view == null) {
-                    logSkin("steve tex no textureView")
-                    null
-                } else {
-                    if (skinSampler == null) {
-                        skinSampler = GpuSamplerRef(RenderSystem.getSamplerCache()
-                            .getClampToEdge(FilterMode.NEAREST))
-                    }
-                    val setup = TextureSetup::class.java.methods.firstOrNull {
-                        it.name == "singleTexture" && it.parameterCount == 2
-                    }?.let {
-                        runCatching { it.invoke(null, view, skinSampler?.ref) }.getOrNull() as? TextureSetup
-                    }
-                    if (setup != null) steveSetupCache = setup
-                    setup
-                }
-            }
-        } catch (e: Throwable) {
-            logSkin("steve setup failed", e as? Exception)
-            null
-        }
-    }
-
-    private class GpuSamplerRef(val ref: Any)
-
     private fun GuiGraphicsExtractor.drawGradientBar(x: Float, y: Float, w: Float, h: Float,
                                                      c1: Triple<Int, Int, Int>, c2: Triple<Int, Int, Int>, alpha: Int) {
         if (w <= 0f || alpha <= 0) return
@@ -298,53 +193,76 @@ object ModuleTargetHud : ClientModule("TargetHUD", ModuleCategories.RENDER, alia
         drawCircle(x + w - r, cy, r, 0f, Float2IntFunction { argb(alpha, c2) })
     }
 
-    private fun GuiGraphicsExtractor.drawHeadCircle(setup: TextureSetup, cx: Float, cy: Float, r: Float) {
-        val strips = 128
-        val u0 = 8f / 64f
-        val v0 = 8f / 64f
-        val span = 8f / 64f
-        val uCenter = u0 + span * 0.5f
-        val vCenter = v0 + span * 0.5f
-        val uRadius = span * 0.5f
-        val vRadius = span * 0.5f
-        for (i in 0 until strips) {
-            val x1 = cx - r + 2f * r * i / strips
-            val x2 = cx - r + 2f * r * (i + 1) / strips
-            val dx1 = (x1 - cx) / r
-            val dx2 = (x2 - cx) / r
-            val chord1 = sqrt((1f - dx1 * dx1).coerceAtLeast(0f)) * r
-            val chord2 = sqrt((1f - dx2 * dx2).coerceAtLeast(0f)) * r
-            val chord = (chord1 + chord2) * 0.5f
-            if (chord <= 0.01f) continue
-            val u1 = u0 + span * i / strips
-            val u2 = u0 + span * (i + 1) / strips
-            val vLo = vCenter - vRadius * (chord / r)
-            val vHi = vCenter + vRadius * (chord / r)
-            drawTexQuad(setup, x1, cy - chord, x2, cy + chord, u1, vLo, u2, vHi)
+    private fun invokeNoArg(obj: Any, names: List<String>): Any? {
+        for (n in names) {
+            val m = obj.javaClass.methods.firstOrNull { it.name == n && it.parameterCount == 0 } ?: continue
+            return runCatching { m.invoke(obj) }.getOrNull()
         }
+        return null
+    }
+
+    private fun GuiGraphicsExtractor.drawCustomAvatar(cx: Float, cy: Float, r: Float) {
+        val id = customAvatarId
+        val sampler = customSampler
+        if (id == null || sampler == null) return
+
+        try {
+            val tex = mc.textureManager.getTexture(id)
+            if (tex.javaClass.simpleName.contains("Missing", ignoreCase = true)) return
+
+            val view = invokeNoArg(tex, listOf("textureView", "getTextureView")) as? GpuTextureView ?: return
+            val setup = TextureSetup.singleTexture(view, sampler)
+
+            val centerU = 0.5f + offsetX
+            val centerV = 0.5f + offsetY
+            val halfWidth = 0.5f / imageScale
+            val halfHeight = 0.5f / imageScale
+
+            val strips = 128
+            for (i in 0 until strips) {
+                val x1 = cx - r + 2f * r * i / strips
+                val x2 = cx - r + 2f * r * (i + 1) / strips
+                val dx1 = (x1 - cx) / r
+                val dx2 = (x2 - cx) / r
+                val chord1 = sqrt((1f - dx1 * dx1).coerceAtLeast(0f)) * r
+                val chord2 = sqrt((1f - dx2 * dx2).coerceAtLeast(0f)) * r
+                val chord = (chord1 + chord2) * 0.5f
+                if (chord <= 0.01f) continue
+
+                val u1 = centerU - halfWidth + 2f * halfWidth * i / strips
+                val u2 = centerU - halfWidth + 2f * halfWidth * (i + 1) / strips
+                val vLo = centerV - halfHeight * (chord / r)
+                val vHi = centerV + halfHeight * (chord / r)
+
+                drawTexQuad(setup, x1, cy - chord, x2, cy + chord, u1, vLo, u2, vHi)
+            }
+        } catch (_: Exception) {}
     }
 
     private fun GuiGraphicsExtractor.drawHead(t: LivingEntity, hx: Float, hy: Float, size: Float,
                                               timeSec: Double, openAnim: Float) {
-        var drew = false
-        if (t is Player) {
-            try {
-                val setup = (cachedSkinSetup(t) as? TextureSetup) ?: getSteveSetup()
-                if (setup != null) {
-                    drawHeadCircle(setup, hx + size / 2f, hy + size / 2f, size / 2f)
-                    drew = true
-                }
-            } catch (e: Exception) {
-                logSkin("head draw failed", e)
-            }
-        }
-        if (!drew) {
-            val cr = size / 2f - 2f
-            val rimC = palette(timeSec / 5.0)
-            drawCircle(hx + size / 2f, hy + size / 2f, cr + 1.2f, 0f,
-                Float2IntFunction { argb((90 * openAnim).toInt(), rimC) })
-            drawCircle(hx + size / 2f, hy + size / 2f, cr, 0f,
-                Float2IntFunction { argb((200 * openAnim).toInt(), rimC) })
+        val alpha = (openAnim * 255).toInt().coerceIn(0, 255)
+        if (alpha <= 0) return
+        val cx = hx + size / 2f
+        val cy = hy + size / 2f
+
+        if (customAvatarId != null) {
+            drawCustomAvatar(cx, cy, size / 2f)
+        } else {
+            val colorHair = (alpha shl 24) or 0x2C4C8B
+            val colorFace = (alpha shl 24) or 0xFFE3CD
+            val colorWhite = (alpha shl 24) or 0xFFFFFF
+            val colorEye = (alpha shl 24) or 0x1A1A2E
+            val colorBlush = (alpha shl 24) or 0xFF9E9E
+
+            drawCircle(cx, cy, size / 2f, 0f, Float2IntFunction { colorHair })
+            drawCircle(cx, cy + size * 0.1f, size * 0.4f, 0f, Float2IntFunction { colorFace })
+            drawRoundedRect(cx - size * 0.4f, cy - size * 0.5f, cx + size * 0.4f, cy - size * 0.35f, size * 0.1f, Color4b(colorWhite))
+            drawRoundedRect(cx - size * 0.25f, cy - size * 0.05f, cx - size * 0.1f, cy + size * 0.05f, size * 0.05f, Color4b(colorEye))
+            drawRoundedRect(cx + size * 0.1f, cy - size * 0.05f, cx + size * 0.25f, cy + size * 0.05f, size * 0.05f, Color4b(colorEye))
+            drawCircle(cx - size * 0.3f, cy + size * 0.15f, size * 0.08f, 0f, Float2IntFunction { colorBlush })
+            drawCircle(cx + size * 0.3f, cy + size * 0.15f, size * 0.08f, 0f, Float2IntFunction { colorBlush })
+            drawCircle(cx, cy + size * 0.3f, size * 0.25f, 0f, Float2IntFunction { colorWhite })
         }
     }
 
@@ -437,7 +355,6 @@ object ModuleTargetHud : ClientModule("TargetHUD", ModuleCategories.RENDER, alia
                 val barW = width - pad - headBlock - pad
                 val barY = y1 + pad + headerH + rowGap
 
-                // 进度条底槽
                 drawRoundedRect(barX, barY, barX + barW, barY + barH, barH / 2f,
                     Color4b(20, 24, 35, (35 * openAnim).toInt()),
                     Color4b(90, 96, 110, (120 * openAnim).toInt()), 1f)

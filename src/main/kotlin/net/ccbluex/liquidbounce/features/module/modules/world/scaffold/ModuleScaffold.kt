@@ -7,6 +7,18 @@
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
+ *
+ * LiquidBounce is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with LiquidBounce. If not, see <https://www.gnu.org/licenses/>.
+ * 下面是修改的东西
+ * 1. 原版 Scaffold 方块在背包里无法搭路：当物品栏没有方块时，自动与背包交换。2026/8/23
+ * 2. 内置 FallRescue：坠落自救（方块自救 + Stuck 兜底自动集合），可自愈。26/11/5
+ * 3.修复已知bug 26/11/8
  */
 package net.ccbluex.liquidbounce.features.module.modules.world.scaffold
 
@@ -19,6 +31,7 @@ import net.ccbluex.liquidbounce.event.tickHandler
 import net.ccbluex.liquidbounce.event.waitTicks
 import net.ccbluex.liquidbounce.features.module.ClientModule
 import net.ccbluex.liquidbounce.features.module.ModuleCategories
+import net.ccbluex.liquidbounce.features.module.modules.combat.velocity.mode.VelocityGrimFull
 import net.ccbluex.liquidbounce.features.module.modules.movement.ModuleSafeWalk
 import net.ccbluex.liquidbounce.features.module.modules.player.ModuleStuck
 import net.ccbluex.liquidbounce.features.module.modules.player.nofall.modes.NoFallBlink
@@ -75,9 +88,6 @@ import net.minecraft.world.phys.BlockHitResult
 import net.minecraft.world.phys.HitResult
 import java.lang.Math.abs
 import java.lang.Math.sqrt
-
-//修复了原版Scaffold 方块在背包里面无法进行搭路的bug  注：当物品栏没有方块时 会自动替换当前物品栏的物品进行交换  2026/8/23
-//内置 FallRescue：坠落自救（方块自救 + Stuck 兜底自动集合），可自愈 26/11/5
 
 @Suppress("TooManyFunctions")
 object ModuleScaffold : ClientModule("Scaffold", ModuleCategories.WORLD) {
@@ -147,7 +157,6 @@ object ModuleScaffold : ClientModule("Scaffold", ModuleCategories.WORLD) {
         }
     private var wasTowering: Boolean = false
 
-    // 救援优先级高于其它模式，强制用 NormalTechnique（Simple 的脚下放置逻辑）
     private val activeTechnique get() = when {
         ScaffoldFallRescueFeature.isRescuing -> ScaffoldNormalTechnique
         isTowering -> ScaffoldNormalTechnique
@@ -178,53 +187,46 @@ object ModuleScaffold : ClientModule("Scaffold", ModuleCategories.WORLD) {
 
     internal object ScaffoldFallRescueFeature : ToggleableValueGroup(ModuleScaffold, "FallRescue", true) {
 
-        // 触发阈值：掉落 2 格即开始尝试自救（从 4 格掉最终会扣 3 心，来得及）
         private val minFallDistance by int("MinFallDistance", 2, 1..30, "blocks")
-        // 距上次成功放置超过 N tick 仍无进展 → 上 Stuck
         private val stuckTriggerAfterTicks by int("StuckTriggerAfterTicks", 5, 1..40, "ticks")
-        // 救援总上限，到点停止 Scaffold 自救让 Stuck 完全接管
         private val maxRescueTicks by int("MaxRescueTicks", 60, 20..400, "ticks")
+        private val maxStuckActivations by int("MaxStuckActivations", 2, 1..5, "times")
+        private val rescueCooldownTicks by int("RescueCooldown", 40, 10..200, "ticks")
 
         private var rescueActive = false
         private var rescueStartTick = 0L
         private var lastPlaceTick = -1L
         private var stuckActivated = false
-        private var wasStuckEnabledBefore = false
+        private var stuckWasEnabledByUs = false
         private var selfRescueTimedOut = false
+        private var stuckActivations = 0
+        private var rescueCooldownUntil = 0L
 
-        /** 处于救援中（开关打开时才可能为 true） */
         val isRescuing: Boolean get() = enabled && rescueActive
 
-        /**
-         * 救援期间**始终**覆盖 Scaffold 落点到「脚下」（不因放置成功停止）。
-         * 只有超时（让 Stuck 完全接管）时才停。
-         */
         val shouldOverridePlacement: Boolean get() = isRescuing && !selfRescueTimedOut
 
         fun onTick() {
+            val now = mc.level?.gameTime ?: 0L
+
             if (!enabled) {
-                if (rescueActive) reset()
+                if (rescueActive) reset(applyCooldown = false)
                 return
             }
+
             if (!rescueActive) {
+                if (now < rescueCooldownUntil) return
                 if (checkShouldRescue()) startRescue() else return
             }
 
-            val now = mc.level?.gameTime ?: 0L
             val elapsed = now - rescueStartTick
 
-            // 结束条件（已安全）
-            if (player.onGround()
-                || player.abilities.flying
-                || player.isFallFlying
-                || player.isInWater || player.isInLava || player.isInPowderSnow
-                || player.isSpectator
-            ) {
-                reset()
+            if (isSafe()) {
+                reset(applyCooldown = false)
                 return
             }
 
-            if (!stuckActivated) {
+            if (!stuckActivated && stuckActivations < maxStuckActivations) {
                 val ref = if (lastPlaceTick >= 0) lastPlaceTick else rescueStartTick
                 if (now - ref >= stuckTriggerAfterTicks) {
                     activateStuck()
@@ -232,27 +234,42 @@ object ModuleScaffold : ClientModule("Scaffold", ModuleCategories.WORLD) {
             }
 
             if (elapsed > maxRescueTicks && !selfRescueTimedOut) {
-                selfRescueTimedOut = true
-                if (!stuckActivated) activateStuck()
-                logger.info("[Scaffold] Fall rescue timed out, Stuck takes over")
+                if (!stuckActivated && stuckActivations < maxStuckActivations) {
+                    activateStuck()
+                }
+                if (stuckActivated || ModuleStuck.enabled) {
+                    selfRescueTimedOut = true
+                    logger.info("[Scaffold] Fall rescue timed out, Stuck takes over")
+                } else {
+                    logger.info("[Scaffold] Fall rescue timed out but Stuck unavailable, extending rescue")
+                    rescueStartTick = now
+                    lastPlaceTick = -1L
+                }
             }
 
-            // Stuck 跑完后自动收尾（若 Stuck 由本 Feature 启用）
-            if (stuckActivated && !wasStuckEnabledBefore && !ModuleStuck.enabled) {
-                reset(disableStuck = false)
+            if ((stuckActivated || selfRescueTimedOut) && !ModuleStuck.enabled) {
+                stuckActivated = false
+                stuckWasEnabledByUs = false
+                if (!isSafe()) {
+                    selfRescueTimedOut = false
+                    rescueStartTick = now
+                    lastPlaceTick = -1L
+                    logger.info("[Scaffold] Fall rescue: Stuck stopped, resuming Scaffold coverage")
+                }
             }
         }
 
-        /** 由 commonPlaceSucceed 调用：记录最近一次成功放置的时刻 */
+        private fun isSafe(): Boolean =
+            player.onGround() ||
+                player.abilities.flying ||
+                player.isFallFlying ||
+                player.isInWater || player.isInLava || player.isInPowderSnow ||
+                player.isSpectator
+
         fun onBlockPlaced() {
             if (rescueActive) lastPlaceTick = mc.level?.gameTime ?: 0L
         }
 
-        /**
-         * 供 getTargetedPosition 使用：
-         * 只要玩家脚下格是空气就返回它（每下落一格自动放一块）。
-         * 若脚下已经是方块（已踩到）则返回 null → 交给正常 Scaffold 逻辑。
-         */
         fun getRescueTargetPos(): BlockPos? {
             if (!shouldOverridePlacement) return null
             val below = player.blockPosition().below()
@@ -260,11 +277,7 @@ object ModuleScaffold : ClientModule("Scaffold", ModuleCategories.WORLD) {
         }
 
         private fun checkShouldRescue(): Boolean {
-            if (player.onGround()) return false
-            if (player.abilities.flying) return false
-            if (player.isFallFlying) return false
-            if (player.isInWater || player.isInLava || player.isInPowderSnow) return false
-            if (player.isSpectator) return false
+            if (isSafe()) return false
             if (player.fallDistance < minFallDistance) return false
             return player.deltaMovement.y < -0.1
         }
@@ -274,40 +287,67 @@ object ModuleScaffold : ClientModule("Scaffold", ModuleCategories.WORLD) {
             rescueStartTick = mc.level?.gameTime ?: 0L
             lastPlaceTick = -1L
             stuckActivated = false
-            wasStuckEnabledBefore = false
+            stuckWasEnabledByUs = false
             selfRescueTimedOut = false
+            stuckActivations = 0
             logger.info("[Scaffold] Fall rescue activated (fall=${player.fallDistance.toInt()})")
         }
 
         private fun activateStuck() {
+            if (stuckActivations >= maxStuckActivations) return
+
+            val alreadyEnabled = ModuleStuck.enabled
             stuckActivated = true
-            wasStuckEnabledBefore = ModuleStuck.enabled
-            if (!wasStuckEnabledBefore) {
-                try {
-                    ModuleStuck.enabled = true
-                    logger.info("[Scaffold] Fall rescue -> ModuleStuck activated")
-                } catch (e: Exception) {
-                    logger.error("[Scaffold] Failed to activate ModuleStuck", e)
-                }
+
+            if (alreadyEnabled) {
+                logger.info("[Scaffold] Fall rescue -> using existing ModuleStuck")
+                return
+            }
+
+            try {
+                ModuleStuck.enabled = true
+                stuckActivations++
+                stuckWasEnabledByUs = true
+                logger.info(
+                    "[Scaffold] Fall rescue -> ModuleStuck activated " +
+                        "($stuckActivations/$maxStuckActivations)"
+                )
+            } catch (e: Exception) {
+                stuckActivated = false
+                stuckWasEnabledByUs = false
+                logger.error("[Scaffold] Failed to activate ModuleStuck", e)
             }
         }
 
-        fun reset(disableStuck: Boolean = true) {
+        fun reset(disableStuck: Boolean = true, applyCooldown: Boolean = true) {
             if (rescueActive) {
-                if (disableStuck && stuckActivated && !wasStuckEnabledBefore) {
+                if (disableStuck && stuckWasEnabledByUs) {
                     try { ModuleStuck.forceStop() } catch (_: Exception) {}
                 }
                 logger.info(
-                    "[Scaffold] Fall rescue ended (placedThisTick=${lastPlaceTick >= 0}, " +
+                    "[Scaffold] Fall rescue ended (placed=${lastPlaceTick >= 0}, " +
                         "stuck=$stuckActivated, timedOut=$selfRescueTimedOut)"
                 )
             }
+
             rescueActive = false
             rescueStartTick = 0L
             lastPlaceTick = -1L
             stuckActivated = false
-            wasStuckEnabledBefore = false
+            stuckWasEnabledByUs = false
             selfRescueTimedOut = false
+
+            if (applyCooldown) {
+                rescueCooldownUntil = (mc.level?.gameTime ?: 0L) + rescueCooldownTicks
+            } else {
+                rescueCooldownUntil = 0L
+            }
+        }
+
+        fun hardReset() {
+            reset(applyCooldown = false)
+            stuckActivations = 0
+            rescueCooldownUntil = 0L
         }
     }
 
@@ -335,9 +375,10 @@ object ModuleScaffold : ClientModule("Scaffold", ModuleCategories.WORLD) {
     private var jumps = 0
     private var nextBlock: Block? = null
 
-    // 抄的南方
     private var originalSlot = -1
     private var bigVelocityTick = 0
+
+    private var swapReflectionFailed = false
 
     val blockCount: Int
         get() {
@@ -382,6 +423,7 @@ object ModuleScaffold : ClientModule("Scaffold", ModuleCategories.WORLD) {
         jumps = 2
         originalSlot = player.inventory.selectedSlot
         bigVelocityTick = 0
+        swapReflectionFailed = false
         ScaffoldMovementPlanner.reset()
         super.onEnabled()
     }
@@ -400,7 +442,7 @@ object ModuleScaffold : ClientModule("Scaffold", ModuleCategories.WORLD) {
         forceSneak = 0
         currentTarget = null
         renderer.clearSilently()
-        ScaffoldFallRescueFeature.reset()
+        ScaffoldFallRescueFeature.hardReset()
         if (switchBack && originalSlot != -1 && originalSlot != player.inventory.selectedSlot) {
             SilentHotbar.selectSlotSilently(this, originalSlot, 0)
         }
@@ -413,7 +455,9 @@ object ModuleScaffold : ClientModule("Scaffold", ModuleCategories.WORLD) {
         EventManager.callEvent(BlockCountChangeEvent(nextBlock, count))
     }
 
-    //击退检测
+    private fun isVelocityHandlingKnockback(): Boolean =
+        VelocityGrimFull.isActive()
+
     @Suppress("unused")
     private val velocityHandler = handler<PacketEvent> { event ->
         val packet = event.packet
@@ -458,10 +502,8 @@ object ModuleScaffold : ClientModule("Scaffold", ModuleCategories.WORLD) {
         }
     }
 
-    // 全速跑 & 救援水平输入清空（防止玩家擦边错过脚下方块）
     @Suppress("unused")
     private val moveInputHandler = handler<MovementInputEvent>(priority = EventPriorityConvention.SAFETY_FEATURE) { event ->
-        // 救援优先级最高：清空水平输入 + 强制蹲（垂直下落到脚下方块上）
         if (ScaffoldFallRescueFeature.isRescuing) {
             event.directionalInput = DirectionalInput.NONE
             event.sneak = true
@@ -472,7 +514,6 @@ object ModuleScaffold : ClientModule("Scaffold", ModuleCategories.WORLD) {
             event.sneak = false
         }
         if (bedWars) {
-            // BedWars 模式可在此扩展 懒得写
         }
     }
 
@@ -498,7 +539,11 @@ object ModuleScaffold : ClientModule("Scaffold", ModuleCategories.WORLD) {
         debugParameter("BigVelocityTick") { bigVelocityTick }
         debugParameter("IsRescuing") { ScaffoldFallRescueFeature.isRescuing }
 
-        if (bigVelocityTick > 0) return@tickHandler
+        if (ScaffoldFallRescueFeature.isRescuing && isVelocityHandlingKnockback()) {
+            return@tickHandler
+        }
+
+        if (bigVelocityTick > 0 && !ScaffoldFallRescueFeature.isRescuing) return@tickHandler
 
         val target = currentTarget
         val technique = activeTechnique
@@ -550,7 +595,6 @@ object ModuleScaffold : ClientModule("Scaffold", ModuleCategories.WORLD) {
             return@tickHandler
         }
 
-        //救援时忽略 minDist：快速垂直下坠时视线几乎正下方，dist 会小于阈值
         if (!target.doesCrosshairTargetMatchRequirements(currentCrosshairTarget) ||
             (!ScaffoldFallRescueFeature.isRescuing && !isValidCrosshairTarget(currentCrosshairTarget))
         ) {
@@ -626,9 +670,7 @@ object ModuleScaffold : ClientModule("Scaffold", ModuleCategories.WORLD) {
             }
         }
     }
-    /**
-     * 搜索整个背包能用的方块
-     */
+
     private fun findAllPlaceableSlots() = buildList(36) {
         for (i in 0..35) {
             val stack = player.inventory.getItem(i)
@@ -649,7 +691,26 @@ object ModuleScaffold : ClientModule("Scaffold", ModuleCategories.WORLD) {
         return slot
     }
 
+    private fun findBestBlockStackForTarget(): ItemStack? {
+        val hotbarSlot = findBestValidHotbarSlotForTarget()
+        if (hotbarSlot != null) return player.inventory.getItem(hotbarSlot)
+
+        if (!ScaffoldFallRescueFeature.isRescuing) return null
+
+        val inventorySlots = findAllPlaceableSlots().filter { (index, _) -> index in 9..35 }
+        if (inventorySlots.isEmpty()) return null
+
+        val doNotUseBelowCount = ScaffoldAutoBlockFeature.doNotUseBelowCount
+        return (inventorySlots
+            .filter { (_, stack) -> stack.count > doNotUseBelowCount }
+            .maxWithOrNull { o1, o2 -> BLOCK_COMPARATOR_FOR_INVENTORY.compare(o1.value, o2.value) }
+            ?: inventorySlots.maxWithOrNull { o1, o2 -> BLOCK_COMPARATOR_FOR_INVENTORY.compare(o1.value, o2.value) }
+            )?.value
+    }
+
     private fun moveInventoryBlockToHotbar(): Int? {
+        if (swapReflectionFailed) return null
+
         val allSlots = findAllPlaceableSlots()
         val doNotUseBelowCount = ScaffoldAutoBlockFeature.doNotUseBelowCount
 
@@ -676,12 +737,20 @@ object ModuleScaffold : ClientModule("Scaffold", ModuleCategories.WORLD) {
                     m.parameterTypes[2] == Int::class.javaPrimitiveType &&
                     m.parameterTypes[3].isEnum &&
                     m.parameterTypes[4].name.contains("Player")
-            } ?: return null
+            } ?: run {
+                swapReflectionFailed = true
+                logger.error("Failed to locate GameMode click method via reflection (disabled until module reload)")
+                return null
+            }
 
             val clickTypeClass = clickMethod.parameterTypes[3]
             val swap = clickTypeClass.enumConstants.firstOrNull {
                 (it as Enum<*>).name == "SWAP"
-            } ?: return null
+            } ?: run {
+                swapReflectionFailed = true
+                logger.error("Failed to locate SWAP enum via reflection (disabled until module reload)")
+                return null
+            }
 
             clickMethod.invoke(
                 gameMode,
@@ -694,7 +763,8 @@ object ModuleScaffold : ClientModule("Scaffold", ModuleCategories.WORLD) {
 
             return targetHotbarSlot
         } catch (e: Exception) {
-            logger.error("Failed to swap inventory slot via reflection", e)
+            swapReflectionFailed = true
+            logger.error("Failed to swap inventory slot via reflection (disabled until module reload)", e)
             return null
         }
     }
@@ -710,7 +780,6 @@ object ModuleScaffold : ClientModule("Scaffold", ModuleCategories.WORLD) {
     }
 
     internal fun getTargetedPosition(blockPos: BlockPos) = when {
-        //救援：始终覆盖到脚下空气格
         ScaffoldFallRescueFeature.shouldOverridePlacement ->
             ScaffoldFallRescueFeature.getRescueTargetPos() ?: blockPos
 
@@ -748,7 +817,9 @@ object ModuleScaffold : ClientModule("Scaffold", ModuleCategories.WORLD) {
     }
 
     private fun handleSilentBlockSelection(hasBlockInMainHand: Boolean, hasBlockInOffHand: Boolean): Boolean {
-        if (ScaffoldAutoBlockFeature.enabled && !hasBlockInMainHand && !hasBlockInOffHand) {
+        val allowInventorySwap = ScaffoldAutoBlockFeature.enabled || ScaffoldFallRescueFeature.isRescuing
+
+        if (allowInventorySwap && !hasBlockInMainHand && !hasBlockInOffHand) {
             val bestMainHandSlot = findBestValidHotbarSlotForTarget()
                 ?: moveInventoryBlockToHotbar()
 
@@ -768,7 +839,6 @@ object ModuleScaffold : ClientModule("Scaffold", ModuleCategories.WORLD) {
         return hasBlockInMainHand
     }
 
-    //Rotation 处理
     var currentOptimalLine: Line? = null
     var rawInput = DirectionalInput.NONE
 
@@ -786,7 +856,6 @@ object ModuleScaffold : ClientModule("Scaffold", ModuleCategories.WORLD) {
     private val movementInputHandler = handler<MovementInputEvent>(
         priority = EventPriorityConvention.SAFETY_FEATURE
     ) { event ->
-        // 救援时不走 ledge 逻辑（已在坠落，ledge 无意义且可能干扰）
         if (ScaffoldFallRescueFeature.isRescuing) return@handler
 
         if (forceSneak > 0) {
@@ -824,20 +893,16 @@ object ModuleScaffold : ClientModule("Scaffold", ModuleCategories.WORLD) {
     private val rotationUpdateHandler = handler<RotationUpdateEvent> {
         NoFallBlink.waitUntilGround = true
 
-        val blockInHotbar = findBestValidHotbarSlotForTarget()
-        val bestStack = if (blockInHotbar == null) {
+        val bestStack = findBestBlockStackForTarget()?.also {
+            nextBlock = it.getBlock()
+        } ?: run {
             nextBlock = null
             ItemStack(Items.SANDSTONE, 64)
-        } else {
-            player.inventory.getItem(blockInHotbar).also {
-                nextBlock = it.getBlock()
-            }
         }
 
         val overriding = ScaffoldFallRescueFeature.shouldOverridePlacement
 
         val optimalLine = if (overriding) null else this.currentOptimalLine
-        // ★ 救援时直接用真实玩家位置作为预测点，让 findPlacementTarget 以玩家脚下为中心搜索
         val predictedPos = if (overriding) {
             player.position()
         } else {

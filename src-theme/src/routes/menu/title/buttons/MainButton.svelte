@@ -1,3 +1,7 @@
+<!--
+    苹果 Liquid Glass 圆形按钮。
+    通过低白度基础底色 + SVG 折射滤镜 + 多重高光模拟真实的玻璃透镜感。
+-->
 <script lang="ts">
     import { fly } from "svelte/transition";
     import { createEventDispatcher } from "svelte";
@@ -23,7 +27,6 @@
     in:fly|global={{ duration: 400, x: -500, delay: index * 100, easing: backOut }}
 >
     <div class="icon">
-        <!-- ✅ 使用 TitleButtonIcon 组件 -->
         <TitleButtonIcon {icon} />
     </div>
     <div class="title">{title}</div>
@@ -34,38 +37,60 @@
 
 <style lang="scss">
     .main-button {
-            /* 圆形按钮 */
         width: 110px;
         height: 110px;
-        border-radius: 50%;
+        border-radius: 42% / 42%;
         padding: 0;
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
         cursor: pointer;
-        background: rgba(255, 255, 255, 0.08);
-        border: 2px solid rgba(255, 255, 255, 0.15);
-        transition: all 0.25s ease;
-        will-change: transform, background, border-color;
+        position: relative;
         overflow: hidden;
         box-sizing: border-box;
-        /* 清除继承的网格属性 */
-        grid-template-columns: unset;
-        column-gap: unset;
-        background-size: unset;
-        background-position: unset;
+
+        background: rgba(255, 255, 255, 0.03);
+
+        backdrop-filter: blur(8px) saturate(1.8);
+        -webkit-backdrop-filter: blur(8px) saturate(1.8);
+        backdrop-filter: blur(8px) saturate(1.8) url(#liquid-lens);
+
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        box-shadow:
+            0 16px 40px rgba(0, 0, 0, 0.5),
+            -2px 0 8px rgba(255, 100, 100, 0.2),
+            2px 0 8px rgba(100, 200, 255, 0.2),
+            inset 0 1.5px 2px rgba(255, 255, 255, 0.9),
+            inset 0 -2px 4px rgba(255, 255, 255, 0.1),
+            inset 0 0 0 1px rgba(0, 0, 0, 0.1);
+
+        transition: all 0.4s cubic-bezier(0.25, 1, 0.5, 1);
     }
 
     .main-button:hover {
-        background: rgba(255, 255, 255, 0.2);
-        border-color: rgba(255, 255, 255, 0.4);
-        transform: scale(1.06);
-        box-shadow: 0 0 25px rgba(255, 255, 255, 0.15);
+        background: rgba(255, 255, 255, 0.08);
+        border-color: rgba(255, 255, 255, 0.5);
+        transform: translateY(-3px) scale(1.02);
+        box-shadow:
+            0 20px 50px rgba(0, 0, 0, 0.6),
+            -3px 0 12px rgba(255, 100, 100, 0.3),
+            3px 0 12px rgba(100, 200, 255, 0.3),
+            inset 0 2px 3px rgba(255, 255, 255, 1),
+            inset 0 -2px 4px rgba(255, 255, 255, 0.2),
+            inset 0 0 0 1px rgba(0, 0, 0, 0.1);
     }
 
     .main-button:active {
-        transform: scale(0.95);
+        transform: translateY(0) scale(0.96);
+        box-shadow:
+            0 4px 16px rgba(0, 0, 0, 0.3),
+            inset 0 1px 2px rgba(255, 255, 255, 0.4);
+    }
+
+    .icon, .title {
+        position: relative;
+        z-index: 2;
     }
 
     .icon {
@@ -73,44 +98,46 @@
         color: white;
         width: auto;
         height: auto;
-        border-radius: 0;
         display: flex;
         align-items: center;
         justify-content: center;
-        transition: none;
+        transition: transform 0.3s ease;
         margin: 0;
         padding: 0;
         line-height: 0;
     }
 
-    /* 适配 TitleButtonIcon 内部的 SVG */
+    .main-button:hover .icon {
+        transform: scale(1.15);
+    }
+
     .icon :global(svg) {
         width: 36px;
         height: 36px;
         fill: white;
-        filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4));
+        filter: drop-shadow(0 4px 8px rgba(0,0,0,0.4));
         display: block;
     }
 
     .title {
         font-size: 13px;
         color: white;
-        font-weight: 600;
-        text-shadow: 0 2px 10px rgba(0,0,0,0.6);
+        font-weight: 700;
+        text-shadow: 0 2px 10px rgba(0,0,0,0.8);
         text-align: center;
-        letter-spacing: 0.5px;
+        letter-spacing: 1px;
         text-transform: uppercase;
-        opacity: 0.9;
+        opacity: 0.95;
         white-space: nowrap;
         max-width: 100%;
         padding: 0 4px;
-        margin: 4px 0 0 0;
+        margin: 6px 0 0 0;
         line-height: 1.2;
         overflow: hidden;
         text-overflow: ellipsis;
     }
 
     .wrapped-content {
-        display: none; /* 隐藏子插槽 */
+        display: none;
     }
 </style>

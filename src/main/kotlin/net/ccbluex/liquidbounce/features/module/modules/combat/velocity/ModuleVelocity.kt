@@ -70,7 +70,7 @@ object ModuleVelocity : ClientModule("Velocity", ModuleCategories.COMBAT, aliase
             VelocityDexland,
             VelocityHylex,
             VelocityBlocksMC,
-
+//目前经过测试 新增的bjd velocity全部gg
             // Anti cheat modes
             VelocityGrimNoxz,
             VelocityGrimFull,

@@ -107,6 +107,8 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
         private var NL_CAT: String = "Combat"
         private var NL_SCROLL: Float = 0f
 
+        private var LIQUID_THEME: LiquidTheme = LiquidTheme.LIGHT
+
         val SHARED_THEME = ClickGuiTheme()
 
         private var themeLoaded = false
@@ -139,8 +141,7 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
                     val idx = ClickGuiTheme.NAMES.indexOf(key)
                     if (idx >= 0) SHARED_THEME.setColor(idx, value)
                 }
-            } catch (_: Throwable) {
-            }
+            } catch (_: Throwable) {}
         }
 
         fun saveThemeToDisk() {
@@ -153,8 +154,7 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
                         .append("%08X".format(SHARED_THEME.getColor(i))).append("\n")
                 }
                 themeFile().writeText(sb.toString())
-            } catch (_: Throwable) {
-            }
+            } catch (_: Throwable) {}
         }
 
         fun resetTheme() {
@@ -182,14 +182,14 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
                     when (parts[0].trim()) {
                         "style" -> currentStyle = runCatching { LayoutStyle.valueOf(parts[1].trim()) }
                             .getOrDefault(LayoutStyle.HCS)
-
                         "nlx" -> parts[1].trim().toFloatOrNull()?.let { NL_X = it }
                         "nly" -> parts[1].trim().toFloatOrNull()?.let { NL_Y = it }
                         "nlcat" -> NL_CAT = parts[1].trim()
+                        "liquidtheme" -> LIQUID_THEME = runCatching { LiquidTheme.valueOf(parts[1].trim()) }
+                            .getOrDefault(LiquidTheme.LIGHT)
                     }
                 }
-            } catch (_: Throwable) {
-            }
+            } catch (_: Throwable) {}
         }
 
         fun saveGuiConfig() {
@@ -200,22 +200,24 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
                 sb.append("nlx=").append(NL_X).append("\n")
                 sb.append("nly=").append(NL_Y).append("\n")
                 sb.append("nlcat=").append(NL_CAT).append("\n")
+                sb.append("liquidtheme=").append(LIQUID_THEME.name).append("\n")
                 guiConfigFile().writeText(sb.toString())
-            } catch (_: Throwable) {
-            }
+            } catch (_: Throwable) {}
         }
     }
 
     private val theme get() = SHARED_THEME
-    private val ACCENT get() = theme.accent
-    private val PANEL_BG get() = theme.panelBg
-    private val HEADER_BG get() = theme.headerBg
-    private val BORDER get() = theme.border
-    private val ROW_HOVER get() = theme.rowHover
-    private val TEXT_ON get() = theme.textOn
-    private val TEXT_OFF get() = theme.textOff
-    private val TEXT_DIM get() = theme.textDim
-    private val DOT_OFF get() = theme.dotOff
+    private var nlTokens: LiquidTokens? = null
+
+    private val ACCENT get() = nlTokens?.accent ?: theme.accent
+    private val PANEL_BG get() = nlTokens?.glassBg ?: theme.panelBg
+    private val HEADER_BG get() = nlTokens?.glassHeaderBg ?: theme.headerBg
+    private val BORDER get() = nlTokens?.divider ?: theme.border
+    private val ROW_HOVER get() = nlTokens?.rowHover ?: theme.rowHover
+    private val TEXT_ON get() = nlTokens?.textPrimary ?: theme.textOn
+    private val TEXT_OFF get() = nlTokens?.textSecondary ?: theme.textOff
+    private val TEXT_DIM get() = nlTokens?.textSecondary ?: theme.textDim
+    private val DOT_OFF get() = nlTokens?.toggleTrackOff ?: theme.dotOff
 
     private val PANEL_W = 124f
     private val HEADER_H = 18f
@@ -307,6 +309,7 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
     private var nlHitCategory = ""
     private var nlHitHeader = false
     private var nlHitClose = false
+    private var nlHitThemeBtn = false
 
     private fun Int.toColor4b(): Color4b {
         return Color4b(
@@ -316,9 +319,6 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
             (this ushr 24) and 0xFF
         )
     }
-
-    private fun isEditingSomething(): Boolean =
-        editingText != null || searchFocused
 
     private fun beginEditText(v: Value<*>) {
         editingText = v
@@ -453,15 +453,12 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
         !isVisible(v) -> 0
         v is ModeValueGroup<*> ->
             16 + v.activeMode.containedValues.filter(::isVisible).sumOf { measureValue(it) }
-
         v is ToggleableValueGroup ->
             14 + if (v.enabled) v.containedValues
                 .filter { it !== v.enabledValue && isVisible(it) }
                 .sumOf { measureValue(it) } + 2 else 0
-
         v is ValueGroup ->
             12 + v.containedValues.filter(::isVisible).sumOf { measureValue(it) }
-
         v.valueType == ValueType.BOOLEAN -> 14
         v.valueType == ValueType.INT || v.valueType == ValueType.FLOAT -> 26
         v.valueType == ValueType.INT_RANGE || v.valueType == ValueType.FLOAT_RANGE -> 32
@@ -470,7 +467,6 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
         v.valueType == ValueType.CHOOSE -> 14
         v.valueType == ValueType.MULTI_CHOOSE ->
             14 + ((v as? MultiChoiceListValue<*>)?.choices?.size ?: 0) * 13
-
         v.valueType == ValueType.COLOR -> 44
         else -> 14
     }
@@ -568,8 +564,7 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
             if (bgEnabled && bg != null) {
                 try {
                     drawBackgroundImage(context, bg)
-                } catch (_: Throwable) {
-                }
+                } catch (_: Throwable) {}
                 val overlay = (bgDim.coerceIn(0, 255) shl 24) or 0x101015
                 rect(context, 0f, 0f, this.width.toFloat(), this.height.toFloat(), overlay)
             } else {
@@ -591,6 +586,7 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
         nlHitCategory = ""
         nlHitHeader = false
         nlHitClose = false
+        nlHitThemeBtn = false
         hoveredModule = null
 
         when (currentStyle) {
@@ -599,11 +595,9 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
                     clampScroll(p)
                     try {
                         drawHcsPanel(context, p)
-                    } catch (_: Throwable) {
-                    }
+                    } catch (_: Throwable) {}
                 }
             }
-
             LayoutStyle.FDP -> drawCompactList(context)
             LayoutStyle.YZY -> drawGridCards(context)
             LayoutStyle.NEVERLOSE -> drawNeverlose(context, mouseX, mouseY, partialTick)
@@ -611,12 +605,11 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
 
         try {
             drawSearchBox(context)
-        } catch (_: Throwable) {
-        }
+        } catch (_: Throwable) {}
+
         try {
             hoveredModule?.let { drawModuleTooltip(context, it) }
-        } catch (_: Throwable) {
-        }
+        } catch (_: Throwable) {}
 
         drawBottomBar(context)
 
@@ -703,8 +696,7 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
                     if (y + mh > p.y + HEADER_H && y < p.y + ph) {
                         try {
                             drawModuleRow(c, p, m, x, y, w)
-                        } catch (_: Throwable) {
-                        }
+                        } catch (_: Throwable) {}
                     }
                     y += mh
                 }
@@ -744,8 +736,7 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
                     (y + 5).toInt(), TEXT_DIM
                 )
             }
-        } catch (_: Throwable) {
-        }
+        } catch (_: Throwable) {}
 
         hits.add(Hit(x, y, w, MODULE_H, Kind.MODULE_ROW, module = m))
 
@@ -756,8 +747,7 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
             if (sh > 0f) {
                 try {
                     drawValue(c, v, x + 4, sy, w - 10)
-                } catch (_: Throwable) {
-                }
+                } catch (_: Throwable) {}
                 sy += sh
             }
         }
@@ -811,8 +801,7 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
                                     (y + 7).toInt(), TEXT_DIM
                                 )
                             }
-                        } catch (_: Throwable) {
-                        }
+                        } catch (_: Throwable) {}
 
                         hits.add(Hit(x, y, w, 22f, Kind.MODULE_ROW, module = m))
 
@@ -823,8 +812,7 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
                                 if (sh > 0f) {
                                     try {
                                         drawValue(c, v, x + 16, sy, w - 28)
-                                    } catch (_: Throwable) {
-                                    }
+                                    } catch (_: Throwable) {}
                                     sy += sh
                                 }
                             }
@@ -931,80 +919,199 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
                 if (sh > 0f) {
                     try {
                         drawValue(c, v, x + 8, sy, w - 16)
-                    } catch (_: Throwable) {
-                    }
+                    } catch (_: Throwable) {}
                     sy += sh
                 }
             }
         }
     }
 
-    // NEVERLOSE
-    private fun drawNeverlose(c: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
+    // ════════════════════════════════════════════════════════════════════════
+    // NEVERLOSE 模式
+    // ════════════════════════════════════════════════════════════════════════
+
+    private fun nlThemeBtnRect(): FloatArray {
+        val topBarH = 36f
+        val brandW = mc.font.width("Neverlose").toFloat()
+        val label = "Theme: ${LIQUID_THEME.displayName}"
+        val w = (mc.font.width(label) + 12f)
+        return floatArrayOf(
+            NL_X + 16f + brandW + 10f,
+            NL_Y + (topBarH - 14f) / 2f,
+            w,
+            14f
+        )
+    }
+
+    private fun drawDefaultLiquidBg(
+        c: GuiGraphicsExtractor,
+        x: Float, y: Float, w: Float, h: Float
+    ) {
+        if (LIQUID_THEME == LiquidTheme.LIGHT) {
+            verticalGradient(c, x, y, w, h, 0xFFF2F6FA.toInt(), 0xFFE0E8F0.toInt())
+        } else {
+            verticalGradient(c, x, y, w, h, 0xFF1E2433.toInt(), 0xFF0F131C.toInt())
+        }
+    }
+
+    private fun verticalGradient(
+        c: GuiGraphicsExtractor,
+        x: Float, y: Float, w: Float, h: Float,
+        topColor: Int, bottomColor: Int
+    ) {
+        if (w <= 0f || h <= 0f) return
+        val steps = 32
+        for (i in 0 until steps) {
+            val t = i / (steps - 1f)
+            val color = blendColor(topColor, bottomColor, t)
+            val y1 = y + h * i / steps
+            val y2 = y + h * (i + 1) / steps
+            c.fill(x.toInt(), y1.toInt(), (x + w).toInt(), y2.toInt(), color)
+        }
+    }
+
+    private fun blendColor(c1: Int, c2: Int, t: Float): Int {
+        val a1 = (c1 ushr 24) and 0xFF
+        val r1 = (c1 ushr 16) and 0xFF
+        val g1 = (c1 ushr 8) and 0xFF
+        val b1 = c1 and 0xFF
+        val a2 = (c2 ushr 24) and 0xFF
+        val r2 = (c2 ushr 16) and 0xFF
+        val g2 = (c2 ushr 8) and 0xFF
+        val b2 = c2 and 0xFF
+        val a = (a1 + (a2 - a1) * t).toInt().coerceIn(0, 255)
+        val r = (r1 + (r2 - r1) * t).toInt().coerceIn(0, 255)
+        val g = (g1 + (g2 - g1) * t).toInt().coerceIn(0, 255)
+        val b = (b1 + (b2 - b1) * t).toInt().coerceIn(0, 255)
+        return (a shl 24) or (r shl 16) or (g shl 8) or b
+    }
+
+    private fun drawNeverlose(
+        c: GuiGraphicsExtractor,
+        mouseX: Int,
+        mouseY: Int,
+        partialTick: Float
+    ) {
+        nlTokens = LiquidPalette.of(LIQUID_THEME)
+        try {
+            drawNeverloseInternal(c, mouseX, mouseY, partialTick)
+        } finally {
+            nlTokens = null
+        }
+    }
+
+    private fun drawNeverloseInternal(
+        c: GuiGraphicsExtractor,
+        mouseX: Int,
+        mouseY: Int,
+        partialTick: Float
+    ) {
+        val t = LiquidPalette.of(LIQUID_THEME)
         val winW = this.width * 0.55f
         val winH = this.height * 0.68f
         val nlX = NL_X
         val nlY = NL_Y
         val topBarH = 36f
         val catW = 100f
-        val accent = ACCENT
-        val textMain = 0xFFE0E0E0.toInt()
-        val textDim = 0xFF7A839B.toInt()
-        val radius = 8f
+        val accent = t.accent
+        val textMain = t.textPrimary
+        val textDim = t.textSecondary
+        val outerRadius = 12f
 
+        // 背景层
         if (bgEnabled && bgTexture != null) {
             drawBgInternal(c, nlX, nlY, winW, winH)
+            // veil 为 0 时不覆盖，完美显示壁纸
+            if (t.veil != 0) rect(c, nlX, nlY, winW, winH, t.veil)
+        } else {
+            drawDefaultLiquidBg(c, nlX, nlY, winW, winH)
         }
 
-        c.drawRoundedRect(nlX, nlY, nlX + winW, nlY + winH, radius, 0xAA0B0E14.toInt().toColor4b())
-        c.drawRoundedRect(nlX, nlY, nlX + winW, nlY + winH, radius, 0x00000000.toColor4b(), 0x35FFFFFF.toColor4b(), 1f)
+        // 液态玻璃主容器
+        c.drawRoundedRect(
+            nlX, nlY, nlX + winW, nlY + winH, outerRadius,
+            t.glassBg.toColor4b()
+        )
 
-        //顶栏
-        c.drawRoundedRect(nlX, nlY, nlX + winW, nlY + topBarH, radius, 0xAA0C111A.toInt().toColor4b())
-        rect(c, nlX, nlY + topBarH - radius, winW, radius, 0xAA0C111A.toInt())
+        // 玻璃边缘 1px 高光
+        c.drawRoundedRect(
+            nlX, nlY, nlX + winW, nlY + winH, outerRadius,
+            0x00000000.toColor4b(), t.glassBorder.toColor4b(), 1f
+        )
 
+        // 顶部内侧反光
+        rect(c, nlX + outerRadius, nlY + 1f, winW - outerRadius * 2, 1f, t.glassBorder)
+        // 底部内侧暗影
+        rect(c, nlX + outerRadius, nlY + winH - 2f, winW - outerRadius * 2, 1f, 0x30000000)
+
+        // 顶部栏
+        c.drawRoundedRect(
+            nlX, nlY, nlX + winW, nlY + topBarH, outerRadius,
+            t.glassHeaderBg.toColor4b()
+        )
+        rect(c, nlX, nlY + topBarH - outerRadius, winW, outerRadius, t.glassHeaderBg)
+        // 顶栏与内容的分隔线
+        rect(c, nlX, nlY + topBarH - 1, winW, 1f, t.glassBorder)
+
+        // 品牌文字
         text(c, "Neverlose", (nlX + 16).toInt(), (nlY + 12).toInt(), accent)
 
+        // 主题切换按钮
+        val (thX, thY, thW, thH) = nlThemeBtnRect()
+        val themeHover = mouseX >= thX && mouseX <= thX + thW &&
+            mouseY >= thY && mouseY <= thY + thH
+        c.drawRoundedRect(
+            thX, thY, thX + thW, thY + thH, 6f,
+            (if (themeHover) t.rowHover else 0x15000000).toColor4b()
+        )
+        c.drawRoundedRect(
+            thX, thY, thX + thW, thY + thH, 6f,
+            0x00000000.toColor4b(),
+            (if (themeHover) accent else t.glassBorder).toColor4b(), 1f
+        )
+        text(
+            c, "Theme: ${LIQUID_THEME.displayName}",
+            (thX + 6f).toInt(), (thY + 3f).toInt(),
+            if (themeHover) accent else textDim
+        )
+        if (themeHover) nlHitThemeBtn = true
+
+        // 关闭按钮
         val closeBtnX = nlX + winW - 28f
         val closeBtnY = nlY + 10f
         val closeHover = mouseX in closeBtnX.toInt()..(closeBtnX + 16).toInt() &&
             mouseY in closeBtnY.toInt()..(closeBtnY + 16).toInt()
         c.drawRoundedRect(
-            closeBtnX,
-            closeBtnY,
-            closeBtnX + 16f,
-            closeBtnY + 16f,
-            4f,
-            (if (closeHover) 0x55FF5555 else 0x25FFFFFF).toInt().toColor4b()
+            closeBtnX, closeBtnY, closeBtnX + 16f, closeBtnY + 16f, 4f,
+            (if (closeHover) 0x55FF5555 else t.rowHover).toColor4b()
         )
-        text(c, "x", (closeBtnX + 6).toInt(), (closeBtnY + 3).toInt(), if (closeHover) 0xFFFF5555.toInt() else textDim)
+        text(
+            c, "x", (closeBtnX + 6).toInt(), (closeBtnY + 3).toInt(),
+            if (closeHover) 0xFFFF5555.toInt() else textDim
+        )
 
-        //顶端搜索框
+        // 搜索框
         val searchW = 130f
         val searchH = 18f
         val searchX = nlX + winW - 50f - searchW
         val searchY = nlY + (topBarH - searchH) / 2f
         val isSearchHovered =
-            mouseX in searchX.toInt()..(searchX + searchW).toInt() && mouseY in searchY.toInt()..(searchY + searchH).toInt()
+            mouseX in searchX.toInt()..(searchX + searchW).toInt() &&
+                mouseY in searchY.toInt()..(searchY + searchH).toInt()
 
-        c.drawRoundedRect(searchX, searchY, searchX + searchW, searchY + searchH, 4f, 0x44000000.toColor4b())
         c.drawRoundedRect(
-            searchX,
-            searchY,
-            searchX + searchW,
-            searchY + searchH,
-            4f,
+            searchX, searchY, searchX + searchW, searchY + searchH, 4f,
+            (if (searchFocused) 0x30FFFFFF else 0x15000000).toColor4b()
+        )
+        c.drawRoundedRect(
+            searchX, searchY, searchX + searchW, searchY + searchH, 4f,
             0x00000000.toColor4b(),
-            (if (searchFocused) accent else 0x44FFFFFF).toColor4b(),
-            1f
+            (if (searchFocused) accent else t.glassBorder).toColor4b(), 1f
         )
 
         val queryText = if (searchQuery.isEmpty() && !searchFocused) "Search..." else searchQuery
         text(
-            c,
-            queryText,
-            (searchX + 6).toInt(),
-            (searchY + 5).toInt(),
+            c, queryText, (searchX + 6).toInt(), (searchY + 5).toInt(),
             if (searchQuery.isEmpty() && !searchFocused) textDim else textMain
         )
 
@@ -1015,12 +1122,18 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
         }
 
         if (closeHover) nlHitClose = true
-        if (mouseY in nlY.toInt()..(nlY + topBarH).toInt() && mouseX in nlX.toInt()..(nlX + winW).toInt() && !isSearchHovered) {
+        if (mouseY in nlY.toInt()..(nlY + topBarH).toInt() &&
+            mouseX in nlX.toInt()..(nlX + winW).toInt() &&
+            !isSearchHovered && !themeHover && !closeHover
+        ) {
             nlHitHeader = true
         }
 
-        //左侧分类栏
-        val categories = listOf("Combat", "Movement", "Player", "Render", "World", "Misc", "Exploit", "Fun")
+        // 左侧分类栏
+        val categories = listOf(
+            "Combat", "Movement", "Player", "Render",
+            "World", "Misc", "Exploit", "Fun"
+        )
         var cy = nlY + topBarH + 8f
         categories.forEach { name ->
             val selected = name.equals(nlCategory, ignoreCase = true)
@@ -1028,29 +1141,29 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
                 mouseY in cy.toInt()..(cy + 22).toInt()
 
             if (selected) {
-                c.drawRoundedRect(
-                    nlX + 10f,
-                    cy,
-                    nlX + catW - 10f,
-                    cy + 22f,
-                    6f,
-                    (accent and 0x00FFFFFF or 0x44000000).toColor4b()
-                )
-                rect(c, nlX + 10f, cy + 5f, 3f, 12f, accent)
+                val bg = if (LIQUID_THEME == LiquidTheme.LIGHT) 0xFFE0F0FF.toInt() else 0x3000D2FF
+                c.drawRoundedRect(nlX + 10f, cy, nlX + catW - 10f, cy + 22f, 6f, bg.toColor4b())
+                c.drawRoundedRect(nlX + 10f, cy + 4f, nlX + 12f, cy + 18f, 1f, accent.toColor4b())
             } else if (rowHover) {
-                c.drawRoundedRect(nlX + 10f, cy, nlX + catW - 10f, cy + 22f, 6f, 0x25FFFFFF.toColor4b())
+                c.drawRoundedRect(nlX + 10f, cy, nlX + catW - 10f, cy + 22f, 6f, t.rowHover.toColor4b())
             }
 
-            text(
-                c, name, (nlX + 22).toInt(), (cy + 7).toInt(),
-                if (selected) accent else if (rowHover) textMain else textDim
-            )
+            val textColor = when {
+                selected -> accent
+                rowHover -> if (LIQUID_THEME == LiquidTheme.LIGHT) 0xFF000000.toInt() else 0xFFFFFFFF.toInt()
+                else -> if (LIQUID_THEME == LiquidTheme.LIGHT) 0xFF222222.toInt() else t.textSecondary
+            }
+
+            // 强制无阴影渲染，防发糊
+            c.text(mc.font, name, (nlX + 22).toInt(), (cy + 7).toInt(), textColor, false)
 
             if (rowHover) nlHitCategory = name
             cy += 26f
         }
+
+        // 头像与 UID
         val infoY = nlY + winH - 50f
-        rect(c, nlX + 10f, infoY - 6f, catW - 20f, 1f, 0x33FFFFFF.toInt())
+        rect(c, nlX + 10f, infoY - 6f, catW - 20f, 1f, t.divider)
 
         val avatarSize = 32f
         val avatarX = nlX + 10f
@@ -1066,12 +1179,18 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
             null
         }
 
-        val steveTex = Identifier.fromNamespaceAndPath("minecraft", "textures/entity/player/wide/steve.png")
+        val steveTex = Identifier.fromNamespaceAndPath(
+            "minecraft", "textures/entity/player/wide/steve.png"
+        )
         val finalTex = texId ?: steveTex
 
-        drawHeadCircle(c, finalTex, avatarX + avatarSize / 2f, avatarY + avatarSize / 2f, avatarSize / 2f)
+        drawHeadCircle(
+            c, finalTex,
+            avatarX + avatarSize / 2f,
+            avatarY + avatarSize / 2f,
+            avatarSize / 2f
+        )
 
-        // 名字和UID
         val playerName = try {
             mc.player?.gameProfile?.name ?: "Player"
         } catch (_: Throwable) {
@@ -1080,10 +1199,11 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
         val uid = LiquidBounce.clientUid ?: "---"
 
         val textX = avatarX + avatarSize + 8f
-        text(c, playerName, textX.toInt(), (avatarY + 2f).toInt(), textMain)
-        text(c, "UID: $uid", textX.toInt(), (avatarY + 14f).toInt(), textDim)
+        // 强制无阴影渲染
+        c.text(mc.font, playerName, textX.toInt(), (avatarY + 2f).toInt(), textMain, false)
+        c.text(mc.font, "UID: $uid", textX.toInt(), (avatarY + 14f).toInt(), textDim, false)
 
-        //右侧模块卡片区域
+        // 右侧卡片区域
         val gridX = nlX + catW + 12f
         val gridY = nlY + topBarH + 12f
         val gridW = winW - catW - 24f
@@ -1095,14 +1215,20 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
         val catModules = modulesIn(nlCategory)
 
         if (gridW > 0 && gridH > 0) {
-            c.enableScissor(gridX.toInt(), gridY.toInt(), (gridX + gridW).toInt(), (gridY + gridH).toInt())
+            c.enableScissor(
+                gridX.toInt(), gridY.toInt(),
+                (gridX + gridW).toInt(), (gridY + gridH).toInt()
+            )
             try {
                 var y = gridY - nlScroll
                 catModules.chunked(cols).forEach { row ->
                     val maxH = row.maxOfOrNull { measureCardHeight(it) } ?: 22f
                     row.forEachIndexed { col, m ->
                         val cx = gridX + col * (cardW + cardGap)
-                        drawNlCard(c, m, cx, y, cardW, maxH, mouseX, mouseY, gridX, gridY, gridW, gridH)
+                        drawNlCard(
+                            c, m, cx, y, cardW, maxH,
+                            mouseX, mouseY, gridX, gridY, gridW, gridH
+                        )
                     }
                     y += maxH + cardGap
                 }
@@ -1120,7 +1246,11 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
             nlScroll = nlScroll.coerceIn(0f, maxScroll)
             val thumbH = max(20f, gridH * (gridH / totalH))
             val thumbY = gridY + (gridH - thumbH) * (nlScroll / maxScroll)
-            c.drawRoundedRect(nlX + winW - 8f, thumbY, nlX + winW - 5f, thumbY + thumbH, 1.5f, 0x55FFFFFF.toColor4b())
+            c.drawRoundedRect(
+                nlX + winW - 8f, thumbY,
+                nlX + winW - 5f, thumbY + thumbH,
+                1.5f, t.divider.toColor4b()
+            )
         } else {
             nlScroll = 0f
         }
@@ -1132,52 +1262,72 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
         mouseX: Int, mouseY: Int,
         gridX: Float, gridY: Float, gridW: Float, gridH: Float
     ) {
+        val t = LiquidPalette.of(LIQUID_THEME)
         val isOpen = m in globalOpenModules
         val cardH = measureCardHeight(m)
 
-        val isInViewport = mouseX >= gridX && mouseX <= gridX + gridW && mouseY >= gridY && mouseY <= gridY + gridH
-        val hover = isInViewport && mouseX in x.toInt()..(x + w).toInt() && mouseY in y.toInt()..(y + cardH).toInt()
+        val isInViewport = mouseX >= gridX && mouseX <= gridX + gridW &&
+            mouseY >= gridY && mouseY <= gridY + gridH
+        val hover = isInViewport &&
+            mouseX in x.toInt()..(x + w).toInt() &&
+            mouseY in y.toInt()..(y + cardH).toInt()
 
-        val accent = ACCENT
-        val textMain = 0xFFE0E0E0.toInt()
-        val textDim = 0xFF7A839B.toInt()
+        val accent = t.accent
+        val textMain = t.textPrimary
+        val textDim = t.textSecondary
 
         val cardBg = when {
-            hover -> 0xCC2A3345.toInt()
-            m.enabled -> 0xAA101522.toInt()
-            else -> 0x88070A10.toInt()
+            hover     -> t.cardHoverBg
+            m.enabled -> t.cardEnabledBg
+            else      -> t.cardIdleBg
         }
 
-        c.drawRoundedRect(x, y, x + w, y + cardH, 4f, cardBg.toColor4b())
+        // 卡片底
+        c.drawRoundedRect(x, y, x + w, y + cardH, 8f, cardBg.toColor4b())
+
+        // 卡片边框
+        val borderColor = if (m.enabled) accent else t.cardBorder
+        c.drawRoundedRect(
+            x, y, x + w, y + cardH, 8f,
+            0x00000000.toColor4b(), borderColor.toColor4b(), 1f
+        )
 
         val name = splitName(m.name)
-        text(c, name, (x + 10).toInt(), (y + 7).toInt(), if (m.enabled) textMain else textDim)
+
+        // 强制不画阴影
+        c.text(mc.font, name, (x + 10).toInt(), (y + 7).toInt(), if (m.enabled) textMain else textDim, false)
 
         val toggleW = 16f
         val toggleH = 8f
         val toggleX = x + w - toggleW - 10f
         val toggleY = y + 7f
 
-        val trackColor = if (m.enabled) accent else 0x44000000.toInt()
-        c.drawRoundedRect(toggleX, toggleY, toggleX + toggleW, toggleY + toggleH, toggleH / 2f, trackColor.toColor4b())
+        val trackColor = if (m.enabled) accent else t.toggleTrackOff
+        c.drawRoundedRect(
+            toggleX, toggleY,
+            toggleX + toggleW, toggleY + toggleH,
+            toggleH / 2f, trackColor.toColor4b()
+        )
 
         val dotSize = 6f
         val dotX = if (m.enabled) toggleX + toggleW - dotSize - 1f else toggleX + 1f
         val dotY = toggleY + 1f
         c.drawRoundedRect(
-            dotX,
-            dotY,
-            dotX + dotSize,
-            dotY + dotSize,
+            dotX, dotY,
+            dotX + dotSize, dotY + dotSize,
             dotSize / 2f,
-            (if (m.enabled) 0xFFFFFFFF.toInt() else 0xFF7A839B.toInt()).toColor4b()
+            (if (m.enabled) t.toggleKnob else t.textSecondary).toColor4b()
         )
 
         hits.add(Hit(x, y, w, 22f, Kind.MODULE_ROW, module = m))
         if (hover) hoveredModule = m
 
         if (isOpen) {
-            c.drawRoundedRect(x + 1f, y + 22f, x + w - 1f, y + cardH - 1f, 3f, 0x66000000.toColor4b())
+            c.drawRoundedRect(
+                x + 1f, y + 22f,
+                x + w - 1f, y + cardH - 1f,
+                6f, t.cardInnerBg.toColor4b()
+            )
 
             var sy = y + 26f
             for (v in m.containedValues.filter(::isVisible)) {
@@ -1185,15 +1335,13 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
                 if (sh > 0f) {
                     try {
                         drawValue(c, v, x + 10, sy, w - 20)
-                    } catch (_: Throwable) {
-                    }
+                    } catch (_: Throwable) {}
                     sy += sh
                 }
             }
         }
     }
 
-    // 内部反射获取 TextureSetup 以避免依赖报错
     private fun invokeNoArg(obj: Any, names: List<String>): Any? {
         for (n in names) {
             val m = obj.javaClass.methods.firstOrNull { it.name == n && it.parameterCount == 0 } ?: continue
@@ -1227,12 +1375,12 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
                     (cx - r).toInt(), (cy - r).toInt(), 8f, 8f,
                     (r * 2).toInt(), (r * 2).toInt(), 8, 8, 64, 64, -1
                 )
-            } catch (_: Throwable) {
-            }
+            } catch (_: Throwable) {}
             return
         }
         drawHeadCircleStrips(c, setup, cx, cy, r)
     }
+
     private fun drawHeadCircleStrips(
         c: GuiGraphicsExtractor, setup: TextureSetup,
         cx: Float, cy: Float, r: Float
@@ -1241,9 +1389,7 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
         val u0 = 8f / 64f
         val v0 = 8f / 64f
         val span = 8f / 64f
-        val uCenter = u0 + span * 0.5f
         val vCenter = v0 + span * 0.5f
-        val uRadius = span * 0.5f
         val vRadius = span * 0.5f
 
         for (i in 0 until strips) {
@@ -1266,8 +1412,10 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
         }
     }
 
-
-    private fun drawBgInternal(c: GuiGraphicsExtractor, nlX: Float, nlY: Float, winW: Float, winH: Float) {
+    private fun drawBgInternal(
+        c: GuiGraphicsExtractor,
+        nlX: Float, nlY: Float, winW: Float, winH: Float
+    ) {
         val tex = bgTexture ?: return
         val img = tex.pixels ?: return
         val iw = img.width
@@ -1278,31 +1426,45 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
             val ir = iw.toFloat() / ih
             val sr = panelW.toFloat() / panelH
             when (bgFit) {
-                0 -> { // Fill
+                0 -> {
                     if (ir > sr) {
                         val rw = ih * sr
-                        blitBg(c, nlX.toInt(), nlY.toInt(), panelW, panelH, (iw - rw) / 2f, 0f, rw.roundToInt(), ih, iw, ih)
+                        blitBg(
+                            c, nlX.toInt(), nlY.toInt(), panelW, panelH,
+                            (iw - rw) / 2f, 0f, rw.roundToInt(), ih, iw, ih
+                        )
                     } else {
                         val rh = iw / sr
-                        blitBg(c, nlX.toInt(), nlY.toInt(), panelW, panelH, 0f, (ih - rh) / 2f, iw, rh.roundToInt(), iw, ih)
+                        blitBg(
+                            c, nlX.toInt(), nlY.toInt(), panelW, panelH,
+                            0f, (ih - rh) / 2f, iw, rh.roundToInt(), iw, ih
+                        )
                     }
                 }
-                1 -> { // Fit
+                1 -> {
                     val dw: Int; val dh: Int
-                    if (ir > sr) { dw = panelW; dh = (panelW / ir).roundToInt() } else { dh = panelH; dw = (panelH * ir).roundToInt() }
-                    blitBg(c, nlX.toInt() + (panelW - dw) / 2, nlY.toInt() + (panelH - dh) / 2, dw, dh, 0f, 0f, iw, ih, iw, ih)
+                    if (ir > sr) {
+                        dw = panelW; dh = (panelW / ir).roundToInt()
+                    } else {
+                        dh = panelH; dw = (panelH * ir).roundToInt()
+                    }
+                    blitBg(
+                        c, nlX.toInt() + (panelW - dw) / 2, nlY.toInt() + (panelH - dh) / 2,
+                        dw, dh, 0f, 0f, iw, ih, iw, ih
+                    )
                 }
-                2 -> { // Stretch
-                    blitBg(c, nlX.toInt(), nlY.toInt(), panelW, panelH, 0f, 0f, iw, ih, iw, ih)
-                }
-                3 -> { // Tile
+                2 -> blitBg(c, nlX.toInt(), nlY.toInt(), panelW, panelH, 0f, 0f, iw, ih, iw, ih)
+                3 -> {
                     val tw = max(iw, 8)
                     val th = max(ih, 8)
                     var ty = 0
                     while (ty < panelH) {
                         var tx = 0
                         while (tx < panelW) {
-                            blitBg(c, nlX.toInt() + tx, nlY.toInt() + ty, tw, th, 0f, 0f, iw, ih, iw, ih)
+                            blitBg(
+                                c, nlX.toInt() + tx, nlY.toInt() + ty, tw, th,
+                                0f, 0f, iw, ih, iw, ih
+                            )
                             tx += tw
                         }
                         ty += th
@@ -1362,8 +1524,10 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
         rect(c, px + THEME_PANEL_W - 1, py, 1f, panelH, 0xFF2C2C33.toInt())
 
         text(c, "Theme DIY", (px + 10).toInt(), (py + 8).toInt(), 0xFF4677FF.toInt())
-        text(c, "ESC to exit  |  [Reset] = default",
-            (px + THEME_PANEL_W - 220).toInt(), (py + 8).toInt(), 0xFF666670.toInt())
+        text(
+            c, "ESC to exit  |  [Reset] = default",
+            (px + THEME_PANEL_W - 220).toInt(), (py + 8).toInt(), 0xFF666670.toInt()
+        )
 
         themeHits.clear()
 
@@ -1391,8 +1555,11 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
             rect(c, previewX, cy - 2f, previewW, 1f, 0xFF2C2C33.toInt())
             rect(c, previewX, cy + 9f, previewW, 1f, 0xFF2C2C33.toInt())
             val hexStr = "#%08X".format(color)
-            text(c, hexStr, (px + padding + nameW + previewW + 6f).toInt(), cy.toInt(),
-                0xFF9C9CA4.toInt())
+            text(
+                c, hexStr,
+                (px + padding + nameW + previewW + 6f).toInt(), cy.toInt(),
+                0xFF9C9CA4.toInt()
+            )
 
             cy += 12f
 
@@ -1409,8 +1576,10 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
                 rect(c, sx, cy + 3f, sliderW * (values[j] / 255f), sliderH, sliderColors[j])
                 val hx = sx + sliderW * (values[j] / 255f) - 1f
                 rect(c, hx, cy + 1f, 2f, sliderH + 4f, 0xFFFFFFFF.toInt())
-                text(c, "${labels[j]}${values[j]}",
-                    (sx + sliderW + 2f).toInt(), cy.toInt(), 0xFF9C9CA4.toInt())
+                text(
+                    c, "${labels[j]}${values[j]}",
+                    (sx + sliderW + 2f).toInt(), cy.toInt(), 0xFF9C9CA4.toInt()
+                )
                 themeHits.add(ThemeHit(sx, cy, sliderW, sliderH + 4f, i, j))
             }
             cy += 18f
@@ -1420,9 +1589,12 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
         val resetH = 14f
         val resetX = px + (THEME_PANEL_W - resetW) / 2f
         val resetY = py + panelH - resetH - 8f
-        val hoveringReset = lastMx in resetX..(resetX + resetW) && lastMy in resetY..(resetY + resetH)
-        rect(c, resetX, resetY, resetW, resetH,
-            if (hoveringReset) 0xFF2A2A33.toInt() else 0xFF1A1A20.toInt())
+        val hoveringReset = lastMx in resetX..(resetX + resetW) &&
+            lastMy in resetY..(resetY + resetH)
+        rect(
+            c, resetX, resetY, resetW, resetH,
+            if (hoveringReset) 0xFF2A2A33.toInt() else 0xFF1A1A20.toInt()
+        )
         rect(c, resetX, resetY, resetW, 1f, 0xFF2C2C33.toInt())
         rect(c, resetX, resetY + resetH - 1, resetW, 1f, 0xFF2C2C33.toInt())
         text(c, "Reset", (resetX + 18f).toInt(), (resetY + 3f).toInt(), 0xFFFFFFFF.toInt())
@@ -1477,8 +1649,10 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
                 val rv = v as RangedValue<*>
                 val cur = (v.get() as? Number)?.toFloat() ?: 0f
                 val isInt = v.valueType == ValueType.INT
-                text(c, "$name: ${fmt(cur, isInt)}${safeStr(rv.suffix)}",
-                    x.toInt(), y.toInt(), TEXT_DIM)
+                text(
+                    c, "$name: ${fmt(cur, isInt)}${safeStr(rv.suffix)}",
+                    x.toInt(), y.toInt(), TEXT_DIM
+                )
                 sliderTrack(c, rv, x, y + 12, w, cur)
                 hits.add(Hit(x, y + 10, w, 14f, Kind.SLIDER, value = v))
             }
@@ -1488,8 +1662,10 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
                 val s = (r.start as? Number)?.toFloat() ?: 0f
                 val e = (r.endInclusive as? Number)?.toFloat() ?: 0f
                 val isInt = v.valueType == ValueType.INT_RANGE
-                text(c, "$name: ${fmt(s, isInt)} ~ ${fmt(e, isInt)}${safeStr(rv.suffix)}",
-                    x.toInt(), y.toInt(), TEXT_DIM)
+                text(
+                    c, "$name: ${fmt(s, isInt)} ~ ${fmt(e, isInt)}${safeStr(rv.suffix)}",
+                    x.toInt(), y.toInt(), TEXT_DIM
+                )
                 sliderTrack(c, rv, x, y + 13, w, s)
                 sliderTrack(c, rv, x, y + 23, w, e)
                 hits.add(Hit(x, y + 8, w, 24f, Kind.RANGE, value = v))
@@ -1532,8 +1708,10 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
                     val isSel = choice in selected
                     val choiceTag = safeStr((choice as? Tagged)?.tag ?: choice)
                     rect(c, x + 2, cy + 2, 6f, 6f, if (isSel) ACCENT else DOT_OFF)
-                    text(c, choiceTag, (x + 12).toInt(), cy.toInt(),
-                        if (isSel) TEXT_ON else TEXT_OFF)
+                    text(
+                        c, choiceTag, (x + 12).toInt(), cy.toInt(),
+                        if (isSel) TEXT_ON else TEXT_OFF
+                    )
                     hits.add(Hit(x, cy, w, 13f, Kind.MULTI_ITEM, value = v, index = i))
                 }
             }
@@ -1561,7 +1739,8 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
     }
 
     private fun text(c: GuiGraphicsExtractor, s: String, x: Int, y: Int, color: Int) {
-        c.text(mc.font, s, x, y, color)
+        val shadow = nlTokens?.textShadow ?: true
+        c.text(mc.font, s, x, y, color, shadow)
     }
 
     private fun row(c: GuiGraphicsExtractor, s: String, x: Float, y: Float, w: Float) {
@@ -1630,15 +1809,20 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
         tx = tx.coerceAtLeast(2f)
         ty = ty.coerceAtLeast(2f)
 
+        // Tooltip 永远保持深色底
         rect(c, tx, ty, w.toFloat(), h.toFloat(), 0xF018181E.toInt())
-        rect(c, tx, ty, w.toFloat(), 1f, ACCENT)
-        rect(c, tx, ty, 1f, h.toFloat(), BORDER)
-        rect(c, tx + w - 1, ty, 1f, h.toFloat(), BORDER)
-        rect(c, tx, ty + h - 1, w.toFloat(), 1f, BORDER)
 
+        val accentColor = if (LIQUID_THEME == LiquidTheme.LIGHT) 0xFF0055CC.toInt() else 0xFF00D2FF.toInt()
+        rect(c, tx, ty, w.toFloat(), 1f, accentColor)
+        rect(c, tx, ty, 1f, h.toFloat(), 0xFF2C2C33.toInt())
+        rect(c, tx + w - 1, ty, 1f, h.toFloat(), 0xFF2C2C33.toInt())
+        rect(c, tx, ty + h - 1, w.toFloat(), 1f, 0xFF2C2C33.toInt())
+
+        // 强制白字+阴影，保证在深色背景上极度清晰
         all.forEachIndexed { i, line ->
-            text(c, line, (tx + 6).toInt(), (ty + 5 + i * lineH).toInt(),
-                if (i >= titleLines.size) TEXT_OFF else TEXT_ON)
+            val isTitle = i < titleLines.size
+            val color = if (isTitle) 0xFFFFFFFF.toInt() else 0xFFB0B0B0.toInt()
+            c.text(mc.font, line, (tx + 6).toInt(), (ty + 5 + i * lineH).toInt(), color, true)
         }
     }
 
@@ -1678,6 +1862,12 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
             val searchX = NL_X + winW - 50f - searchW
             val searchY = NL_Y + (topBarH - searchH) / 2f
 
+            if (nlHitThemeBtn && button == 0) {
+                LIQUID_THEME = LIQUID_THEME.toggle()
+                saveGuiConfig()
+                return true
+            }
+
             if (nlHitClose && button == 0) { mc.setScreen(null); return true }
             if (mx in searchX..(searchX + searchW) && my in searchY..(searchY + searchH) && button == 0) {
                 searchFocused = true
@@ -1713,8 +1903,10 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
         if (searchFocused) searchFocused = false
 
         listeningBind?.let { v ->
-            v.set(InputBind(InputConstants.Type.MOUSE.getOrCreate(button),
-                v.get().action, v.get().modifiers))
+            v.set(InputBind(
+                InputConstants.Type.MOUSE.getOrCreate(button),
+                v.get().action, v.get().modifiers
+            ))
             listeningBind = null
             return true
         }
@@ -1917,7 +2109,7 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
                     return true
                 }
                 keyCode == InputConstants.KEY_DELETE -> { searchQuery = ""; return true }
-                else -> return true // 拦截按键
+                else -> return true
             }
         }
 
@@ -1949,7 +2141,7 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
                     return true
                 }
                 keyCode == InputConstants.KEY_DELETE -> { editBuffer.clear(); return true }
-                else -> return true // 拦截按键
+                else -> return true
             }
         }
         return super.keyPressed(event)
@@ -2152,8 +2344,10 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
         x: Int, y: Int, w: Int, h: Int,
         u: Float, v: Float, rw: Int, rh: Int, tw: Int, th: Int
     ) {
-        c.blit(RenderPipelines.GUI_TEXTURED, BG_TEXTURE_ID,
-            x, y, u, v, w, h, rw, rh, tw, th)
+        c.blit(
+            RenderPipelines.GUI_TEXTURED, BG_TEXTURE_ID,
+            x, y, u, v, w, h, rw, rh, tw, th
+        )
     }
 
     private fun drawBackgroundImage(c: GuiGraphicsExtractor, tex: DynamicTexture) {
@@ -2228,12 +2422,16 @@ class ClickGuiHCS : Screen(Component.literal("ClickGUI")) {
             val pr = prevW / prevH; val ir = iw.toFloat() / ih
             if (ir > pr) {
                 val rw = ih * pr
-                blitBg(c, prevX.toInt(), prevY.toInt(), prevW.toInt(), prevH.toInt(),
-                    (iw - rw) / 2f, 0f, rw.roundToInt(), ih, iw, ih)
+                blitBg(
+                    c, prevX.toInt(), prevY.toInt(), prevW.toInt(), prevH.toInt(),
+                    (iw - rw) / 2f, 0f, rw.roundToInt(), ih, iw, ih
+                )
             } else {
                 val rh = iw / pr
-                blitBg(c, prevX.toInt(), prevY.toInt(), prevW.toInt(), prevH.toInt(),
-                    0f, (ih - rh) / 2f, iw, rh.roundToInt(), iw, ih)
+                blitBg(
+                    c, prevX.toInt(), prevY.toInt(), prevW.toInt(), prevH.toInt(),
+                    0f, (ih - rh) / 2f, iw, rh.roundToInt(), iw, ih
+                )
             }
         } else {
             rect(c, prevX, prevY, prevW, prevH, 0xFF101013.toInt())
